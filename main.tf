@@ -64,15 +64,6 @@ data "aws_iam_policy_document" "lambda" {
   }
 }
 
-resource "aws_lambda_permission" "events" {
-  for_each = aws_cloudwatch_event_rule.this
-
-  action        = "lambda:InvokeFunction"
-  function_name = module.lambda.lambda_function_name
-  principal     = "events.amazonaws.com"
-  source_arn    = each.value.arn
-}
-
 ##############################
 # Common
 ##############################
