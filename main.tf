@@ -37,9 +37,9 @@ module "lambda" {
   ]
 
   environment_variables = {
-    LOG_LEVEL                  = var.log_level
+    LOG_LEVEL = var.log_level
     # ASSUME_ROLE_NAME           = var.assume_role_name
-    DRY_RUN                    = var.dry_run
+    DRY_RUN = var.dry_run
     # MAX_WORKERS                = var.max_workers
     # AWS_STS_REGIONAL_ENDPOINTS = var.aws_sts_regional_endpoints
     #add SSM Document, iam user name?, 
@@ -62,6 +62,12 @@ data "aws_iam_policy_document" "lambda" {
       "*"
     ]
   }
+}
+
+resource "aws_lambda_permission" "events" {
+  action        = "lambda:InvokeFunction"
+  function_name = module.lambda.lambda_function_name
+  principal     = "secretsmanager.amazonaws.com"
 }
 
 ##############################
