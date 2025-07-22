@@ -40,24 +40,67 @@ variable "log_level" {
   }
 }
 
-variable "max_workers" {
-  description = "Number of worker threads to use to process delete"
-  type        = number
-  default     = 20
-}
-
-variable "aws_sts_regional_endpoints" {
-  description = "Sets AWS STS endpoint resolution logic for boto3."
-  type        = string
-  default     = "regional"
-  validation {
-    condition     = contains(["regional", "legacy"], var.aws_sts_regional_endpoints)
-    error_message = "Valid values for aws sts regional endpoints are (regional, legacy)."
-  }
-}
+# variable "aws_sts_regional_endpoints" {
+#   description = "Sets AWS STS endpoint resolution logic for boto3."
+#   type        = string
+#   default     = "regional"
+#   validation {
+#     condition     = contains(["regional", "legacy"], var.aws_sts_regional_endpoints)
+#     error_message = "Valid values for aws sts regional endpoints are (regional, legacy)."
+#   }
+# }
 
 variable "tags" {
   description = "Tags for resource"
   type        = map(string)
   default     = {}
+}
+
+variable "secrest_manager_endpoint" {
+  description = "Secrets Manager Endpoint to get/set secret"
+  type        = string
+}
+
+variable "ses_smtp_endpoint" {
+  description = "SES SMTP Endpoint to test new smtp credentials against"
+  type        = string
+}
+
+variable "notification_sender_email" {
+  description = "SES Verified identity/email address used in FROM field of notification email after rotation"
+  type        = string
+}
+
+variable "notification_recipient_email" {
+  description = "Email address to send notification email to after rotation"
+  type        = string
+}
+
+variable "smtp_iam_username" {
+  description = "IAM Username for which to generate new SES SMTP credentials"
+  type        = string
+}
+
+variable "ssm_rotation_document_name" {
+  description = "SSM Document name to use with Command List for updating credentials on EC2 servers with ssm_server_tag_value"
+  type        = string
+  default     = ""
+}
+
+variable "ssm_commands_list" {
+  description = "List of Commands to send to EC2 host via SSM in order to update credentials use"
+  type        = list(string)
+  default     = [""]
+}
+
+variable "ssm_server_tag" {
+  description = "Tag key used along with tag value to identify EC2 host to run SSM commands list against"
+  type        = string
+  default     = ""
+}
+
+variable "ssm_server_tag_value" {
+  description = "Tag value used along with tag key to identify EC2 host to run SSM commands list against"
+  type        = string
+  default     = ""
 }

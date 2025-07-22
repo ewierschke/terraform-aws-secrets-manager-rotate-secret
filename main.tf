@@ -37,12 +37,18 @@ module "lambda" {
   ]
 
   environment_variables = {
-    LOG_LEVEL = var.log_level
-    # ASSUME_ROLE_NAME           = var.assume_role_name
-    DRY_RUN = var.dry_run
-    # MAX_WORKERS                = var.max_workers
+    LOG_LEVEL                    = var.log_level
+    DRY_RUN                      = var.dry_run
+    SES_SMTP_ENDPOINT            = var.ses_smtp_endpoint
+    NOTIFICATION_SENDER_EMAIL    = var.notification_sender_email
+    NOTIFICATION_RECIPIENT_EMAIL = var.notification_recipient_email
+    SECRETS_MANAGER_ENDPOINT     = var.secrest_manager_endpoint
+    SMTP_IAM_USERNAME            = var.smtp_iam_username
+    SSM_ROTATION_DOCUMENT_NAME   = var.ssm_rotation_document_name
+    SSM_COMMANDS_LIST            = var.ssm_commands_list
+    SSM_SERVER_TAG               = var.ssm_server_tag
+    SSM_SERVER_TAG_VALUE         = var.ssm_server_tag_value
     # AWS_STS_REGIONAL_ENDPOINTS = var.aws_sts_regional_endpoints
-    #add SSM Document, iam user name?, 
   }
 }
 

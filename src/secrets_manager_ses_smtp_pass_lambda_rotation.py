@@ -5,24 +5,54 @@
 #ref-template from https://github.com/aws-samples/aws-secrets-manager-rotation-lambdas/blob/master/SecretsManagerRotationTemplate/lambda_function.py
 #combined w - https://github.com/aws-samples/serverless-mail/blob/main/ses-credential-rotation/ses_credential_rotator/lambda_function.py
 
-import boto3
+
+import collections
 import logging
 import os
-
-import botocore
 import hmac
 import hashlib
 import base64
 import smtplib
 import time
 
+import boto3
+import botocore
+
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 
-logger = logging.getLogger()
-# Get the log level from the environment variable and default to INFO if not set
-log_level = os.environ.get('LOG_LEVEL', 'INFO')
-logger.setLevel(log_level)
+# logger = logging.getLogger()
+# # Get the log level from the environment variable and default to INFO if not set
+# log_level = os.environ.get('LOG_LEVEL', 'INFO')
+# log.setLevel(log_level)
+
+# Standard logging config
+DEFAULT_LOG_LEVEL = logging.INFO
+LOG_LEVELS = collections.defaultdict(
+    lambda: DEFAULT_LOG_LEVEL,
+    {
+        "CRITICAL": logging.CRITICAL,
+        "ERROR": logging.ERROR,
+        "WARNING": logging.WARNING,
+        "INFO": logging.INFO,
+        "DEBUG": logging.DEBUG,
+    },
+)
+
+# Lambda initializes a root logger that needs to be removed in order to set a
+# different logging config
+root = logging.getLogger()
+if root.handlers:
+    for handler in root.handlers:
+        root.removeHandler(handler)
+
+logging.basicConfig(
+    format="%(asctime)s.%(msecs)03dZ [%(name)s][%(levelname)s]: %(message)s ",
+    datefmt="%Y-%m-%dT%H:%M:%S",
+    level=LOG_LEVELS[os.environ.get("LOG_LEVEL", "").upper()],
+)
+
+log = logging.getLogger(__name__)
 
 SMTP_REGIONS = [
     "us-east-2",  # US East (Ohio)
@@ -45,21 +75,21 @@ SMTP_REGIONS = [
 ]
 
 REGION = os.environ.get("AWS_REGION")
-TEST_STAGE_SES_SMTP_HOST = os.environ.get("SES_SMTP_HOST", "email-smtp.us-east-1.amazonaws.com")# Example for us-east-1
+DRY_RUN = os.environ.get("DRY_RUN", "true").lower() == "true"
+TEST_STAGE_SES_SMTP_ENDPOINT = os.environ.get("SES_SMTP_ENDPOINT", "email-smtp.us-east-1.amazonaws.com") # Example for us-east-1
 TEST_STAGE_SES_SMTP_PORT = 587
-TEST_STAGE_SENDER_EMAIL = os.environ.get("SENDER_EMAIL")
-TEST_STAGE_RECIPIENT_EMAIL = os.environ.get("RECIPIENT_EMAIL")
+TEST_STAGE_SENDER_EMAIL = os.environ.get("NOTIFICATION_SENDER_EMAIL")
+TEST_STAGE_RECIPIENT_EMAIL = os.environ.get("NOTIFICATION_RECIPIENT_EMAIL")
 TEST_STAGE_EMAIL_SUBJECT = "Test Email from Lambda/Python via SES"
 TEST_STAGE_EMAIL_BODY_TEXT = "This is a test email sent after secret rotation using Python and Amazon SES SMTP."
 TEST_STAGE_EMAIL_BODY_HTML = "<html><body><h1>Hello!</h1><p>This is a <b>test email</b> sent after secret rotation using Lambda/Python and Amazon SES SMTP.</p></body></html>"
 
 # And the environment input details
-smtp_iam_user_arn = os.environ['SMTP_IAM_USER_NAME']
-document_name = os.environ['SSM_ROTATION_DOCUMENT']
+SMTP_IAM_USERNAME = os.environ['SMTP_IAM_USERNAME']
+SSM_ROTATION_DOCUMENT_NAME = os.environ['SSM_ROTATION_DOCUMENT_NAME']
 SSM_COMMANDS_LIST = os.environ['SSM_COMMANDS_LIST']
-server_key = os.environ['SSM_SERVER_TAG']
-server_key_value = os.environ['SSM_SERVER_TAG_VALUE']
-
+SSM_SERVER_TAG = os.environ['SSM_SERVER_TAG']
+SSM_SERVER_TAG_VALUE = os.environ['SSM_SERVER_TAG_VALUE']
 
 # These values are required to calculate the signature. Do not change them.
 DATE = "11111111"
@@ -90,9 +120,8 @@ def lambda_handler(event, context):
         KeyError: If the event parameters do not contain the expected keys
 
     """
-    logger.info('## EVENT')
-    logger.info(event)
-    logger.info('##')
+    log.debug("AWS Event: %s", event)
+
     arn = event['SecretId']
     token = event['ClientRequestToken']
     step = event['Step']
@@ -105,36 +134,36 @@ def lambda_handler(event, context):
     # Make sure the version is staged correctly
     metadata = service_client.describe_secret(SecretId=arn)
     if not metadata['RotationEnabled']:
-        logger.error("Secret %s is not enabled for rotation" % arn)
+        log.error("Secret %s is not enabled for rotation" % arn)
         raise ValueError("Secret %s is not enabled for rotation" % arn)
     versions = metadata['VersionIdsToStages']
     if token not in versions:
-        logger.error("Secret version %s has no stage for rotation of secret %s." % (token, arn))
+        log.error("Secret version %s has no stage for rotation of secret %s." % (token, arn))
         raise ValueError("Secret version %s has no stage for rotation of secret %s." % (token, arn))
     if "AWSCURRENT" in versions[token]:
-        logger.info("Secret version %s already set as AWSCURRENT for secret %s." % (token, arn))
+        log.info("Secret version %s already set as AWSCURRENT for secret %s." % (token, arn))
         return
     elif "AWSPENDING" not in versions[token]:
-        logger.error("Secret version %s not set as AWSPENDING for rotation of secret %s." % (token, arn))
+        log.error("Secret version %s not set as AWSPENDING for rotation of secret %s." % (token, arn))
         raise ValueError("Secret version %s not set as AWSPENDING for rotation of secret %s." % (token, arn))
 
     if step == "createSecret":
-        logger.info("Executing Create Secret Function")
+        log.info("Executing Create Secret Function")
         #TODO - decide about adding more params
-        create_secret(service_client, arn, token, REGION)
+        create_secret(service_client, arn, token, REGION, SMTP_IAM_USERNAME)
 
     elif step == "setSecret":
-        logger.info("Executing Set Secret Function")
+        log.info("Executing Set Secret Function")
         #TODO - decide about adding more params
-        set_secret(service_client, arn, token)
+        set_secret(service_client, arn, token, SSM_ROTATION_DOCUMENT_NAME, SSM_COMMANDS_LIST, SSM_SERVER_TAG, SSM_SERVER_TAG_VALUE)
 
     elif step == "testSecret":
-        logger.info("Executing Test Secret Function")
+        log.info("Executing Test Secret Function")
         #TODO - decide about adding more params
-        test_secret(service_client, arn, token)
+        test_secret(service_client, arn, token, TEST_STAGE_SES_SMTP_ENDPOINT)
 
     elif step == "finishSecret":
-        logger.info("Executing Finish Secret Function")
+        log.info("Executing Finish Secret Function")
         #TODO - decide about adding more params
         finish_secret(service_client, arn, token)
 
@@ -160,8 +189,8 @@ def calculate_key(secret_access_key, region):
     return smtp_password.decode('utf-8')
 
 
-#TODO - decide about adding more params (where to get smtp_iam_user_name)
-def create_secret(service_client, arn, token, region):
+#TODO - decide about adding more params (where to get smtp_iam_username)
+def create_secret(service_client, arn, token, region, smtp_iam_username):
     """Create the secret
 
     This method first checks for the existence of a secret for the passed in token. If one does not exist, it will generate a
@@ -184,7 +213,7 @@ def create_secret(service_client, arn, token, region):
     # Now try to get the secret version, if that fails, put a new secret
     try:
         service_client.get_secret_value(SecretId=arn, VersionId=token, VersionStage="AWSPENDING")
-        logger.info("createSecret: Successfully retrieved secret for %s." % arn)
+        log.info("createSecret: Successfully retrieved secret for %s." % arn)
     except service_client.exceptions.ResourceNotFoundException:
         ## Get exclude characters from environment variable
         #exclude_characters = os.environ['EXCLUDE_CHARACTERS'] if 'EXCLUDE_CHARACTERS' in os.environ else '/@"\'\\'
@@ -194,18 +223,18 @@ def create_secret(service_client, arn, token, region):
         # Create new Access key and secret key
         iam_client = boto3.client('iam')
 
-        keys_response = iam_client.list_access_keys(UserName=iam_user_name)
+        keys_response = iam_client.list_access_keys(UserName=smtp_iam_username)
         access_keys = sorted(keys_response['AccessKeyMetadata'], key=lambda x: x['CreateDate'])
 
         #IAM user can have 2 keys, delete the oldest before creating a new one
         #or should the old key only be set to inactive in case it is still needed(ie revert?)
         if len(access_keys) >= 2:
             oldest_key_id = access_keys[0]['AccessKeyId']
-            iam_client.delete_access_key(UserName=iam_user_name, AccessKeyId=oldest_key_id)
-            logger.info("Deleted oldest access key for %s: %s", iam_user_name, oldest_key_id)
+            iam_client.delete_access_key(UserName=smtp_iam_username, AccessKeyId=oldest_key_id)
+            log.info("Deleted oldest access key for %s: %s", smtp_iam_username, oldest_key_id)
 
         new_key = iam_client.create_access_key(
-            UserName=smtp_iam_user_name
+            UserName=smtp_iam_username
         )
 
         new_access_key = new_key['AccessKey']['AccessKeyId']
@@ -216,13 +245,13 @@ def create_secret(service_client, arn, token, region):
 
         # Put the secret
         try:
-            secret_client.put_secret_value(SecretId=secret_arn, ClientRequestToken=token, SecretString=new_secret, VersionStages=['AWSPENDING'])
+            service_client.put_secret_value(SecretId=arn, ClientRequestToken=token, SecretString=new_secret, VersionStages=['AWSPENDING'])
         except botocore.exceptions.ClientError as error:
 
             print(error)
             print("Put secret failed, removing IAM key from user")
             iam_client.delete_access_key(
-                UserName=smtp_iam_user_name,
+                UserName=smtp_iam_username,
                 AccessKeyId=new_access_key
             )
 
@@ -230,11 +259,11 @@ def create_secret(service_client, arn, token, region):
 
         #keep for ref?
         #service_client.put_secret_value(SecretId=arn, ClientRequestToken=token, SecretString=passwd['RandomPassword'], VersionStages=['AWSPENDING'])
-        logger.info("createSecret: Successfully put secret for ARN %s and version %s." % (arn, token))
+        log.info("createSecret: Successfully put secret for ARN %s and version %s." % (arn, token))
 
 
 ##TODO-update params passed - ie based on what execute_ssm needs
-def set_secret(service_client, arn, token):
+def set_secret(service_client, arn, token, ssm_document_name, ssm_commands_list, ssm_server_tag, ssm_server_tag_value):
     """Set the secret
 
     This method should set the AWSPENDING secret in the service that the secret belongs to. For example, if the secret is a database
@@ -252,7 +281,7 @@ def set_secret(service_client, arn, token):
     # Now try to get the secret version, if that fails, put a new secret
     try:
         current_secret = service_client.get_secret_value(SecretId=arn, VersionId=token, VersionStage="AWSPENDING")
-        logger.info("setSecret: Successfully retrieved secret for %s." % arn)
+        log.info("setSecret: Successfully retrieved secret for %s." % arn)
     except service_client.exceptions.ResourceNotFoundException:
         raise Exception("AWSPENDING secret doesn't exist to set on service")
 
@@ -261,7 +290,7 @@ def set_secret(service_client, arn, token):
     ssm_client = boto3.client('ssm')
     # Execute the SSM command against the tagged servers with the new secret
     ##TODO-update params passed
-    command_id = _execute_ssm_run_command(ssm_client, document_name, server_key, server_key_value, secret_username, secret_password)
+    command_id = _execute_ssm_run_command(ssm_client, ssm_document_name, ssm_commands_list, ssm_server_tag, ssm_server_tag_value, secret_username, secret_password)
 
     # Wait for invocations to appear for the command
     _wait_for_ssm_invocations(ssm_client, command_id)
@@ -270,11 +299,11 @@ def set_secret(service_client, arn, token):
     _check_invocation_success(ssm_client, command_id)
 
     ##TODO-add dest host in output (or key/val of tags?)
-    logger.info("setSecret: Successfully set secret for %s." % arn)
+    log.info("setSecret: Successfully set secret for %s." % arn)
 
 
 ##TODO-add smtp endpoint as env var to test against?
-def test_secret(service_client, arn, token):
+def test_secret(service_client, arn, token, ses_smtp_endpoint):
     """Test the secret
 
     This method should validate that the AWSPENDING secret works in the service that the secret belongs to. For example, if the secret
@@ -291,15 +320,15 @@ def test_secret(service_client, arn, token):
     """
     # This is where the secret should be tested against the service
     # Get the pending secret
-    pending_secret = secret_client.get_secret_value(SecretId=secret_arn, VersionId=token, VersionStage="AWSPENDING")['SecretString']
+    pending_secret = service_client.get_secret_value(SecretId=arn, VersionId=token, VersionStage="AWSPENDING")['SecretString']
 
     secret_username, secret_password = pending_secret.split(":")
 
     # Create a new smtp client
-    smtp_client = smtplib.SMTP_SSL(TEST_STAGE_SES_SMTP_HOST)
+    smtp_client = smtplib.SMTP_SSL(ses_smtp_endpoint)
 
     # Re-try login attempts to give the new credential time to stabilise
-    login_retry = 30
+    login_retry = 15
     successful = False
 
     # Loop with a delay to give the time for a credential to activate
@@ -309,6 +338,7 @@ def test_secret(service_client, arn, token):
         try:
             smtp_login = smtp_client.login(secret_username, secret_password)
         except:
+            log.info("login unsuccessful: %s", login_retry)
             time.sleep(1)
             login_retry -= 1
             pass
@@ -319,8 +349,9 @@ def test_secret(service_client, arn, token):
     if not successful:
         raise RuntimeError(f"Unable to login to smtp server : {smtp_login}")
 
+    #TODO-revisit vars to pass
     send_ses_email(
-        TEST_STAGE_SES_SMTP_HOST, TEST_STAGE_SES_SMTP_PORT, secret_username, secret_password,
+        ses_smtp_endpoint, TEST_STAGE_SES_SMTP_PORT, secret_username, secret_password,
         TEST_STAGE_SENDER_EMAIL, TEST_STAGE_RECIPIENT_EMAIL, TEST_STAGE_EMAIL_SUBJECT, TEST_STAGE_EMAIL_BODY_TEXT, TEST_STAGE_EMAIL_BODY_HTML
     )
 
@@ -350,19 +381,21 @@ def finish_secret(service_client, arn, token):
         if "AWSCURRENT" in metadata["VersionIdsToStages"][version]:
             if version == token:
                 # The correct version is already marked as current, return
-                logger.info("finishSecret: Version %s already marked as AWSCURRENT for %s" % (version, arn))
+                log.info("finishSecret: Version %s already marked as AWSCURRENT for %s" % (version, arn))
                 return
             current_version = version
             break
 
     # Finalize by staging the secret version current
     service_client.update_secret_version_stage(SecretId=arn, VersionStage="AWSCURRENT", MoveToVersionId=token, RemoveFromVersionId=current_version)
-    logger.info("finishSecret: Successfully set AWSCURRENT stage to version %s for secret %s." % (token, arn))
+    log.info("finishSecret: Successfully set AWSCURRENT stage to version %s for secret %s." % (token, arn))
 
 
 #TODO-should likely take (from env?) in a python formated list of commands to pass to ssm send_command instead of documet_name
-def _execute_ssm_run_command(ssm_client, document_name, server_key, server_key_value, secret_username, secret_password):
+def _execute_ssm_run_command(ssm_client, document_name, ssm_commands_list, server_key, server_key_value, secret_username, secret_password):
     # Execute the provided SSM document to update and restart the email server
+
+    log.info(f"_execute_ssm_run_command: SSM Commands list to execute {ssm_commands_list}.")
 
     response = ssm_client.send_command(
       Targets=[
@@ -377,6 +410,7 @@ def _execute_ssm_run_command(ssm_client, document_name, server_key, server_key_v
       CloudWatchOutputConfig={
           'CloudWatchOutputEnabled': True
       },
+      #need to change parameters to take commands list
       Parameters={
         'SESUsername': [
           secret_username,
@@ -388,7 +422,7 @@ def _execute_ssm_run_command(ssm_client, document_name, server_key, server_key_v
     )
 
     command_id = response['Command']['CommandId']
-    logger.info(f"finishSecret: SSM Command ID {command_id} executed.")
+    log.info(f"finishSecret: SSM Command ID {command_id} executed.")
     return command_id
 
 
@@ -423,7 +457,7 @@ def _check_invocation_success(ssm_client, command_id):
         command_invocation_status = ssm_client.list_command_invocations(CommandId=command_id)['CommandInvocations']
         for invocation in command_invocation_status:
 
-            logger.info(f"finishSecret: Status of SSM Run Command on instance {invocation['InstanceId']} is {invocation['Status']}")
+            log.info(f"finishSecret: Status of SSM Run Command on instance {invocation['InstanceId']} is {invocation['Status']}")
             if invocation['Status'] != 'Pending' and invocation['Status'] != 'InProgress':
                 completeInvocations += 1
 
@@ -457,14 +491,14 @@ def _mark_new_secret_as_current(secret_client, secret_arn, token):
         if "AWSCURRENT" in metadata["VersionIdsToStages"][version]:
             if version == token:
                 # The correct version is already marked as current, return
-                logger.info("finishSecret: Version %s already marked as AWSCURRENT for %s" % (version, secret_arn))
+                log.info("finishSecret: Version %s already marked as AWSCURRENT for %s" % (version, secret_arn))
                 return
             current_version = version
             break
 
     # Finalize by staging the secret version current
     secret_client.update_secret_version_stage(SecretId=secret_arn, VersionStage="AWSCURRENT", MoveToVersionId=token, RemoveFromVersionId=current_version)
-    logger.info("finishSecret: Successfully set AWSCURRENT stage to version %s for secret %s." % (token, secret_arn))
+    log.info("finishSecret: Successfully set AWSCURRENT stage to version %s for secret %s." % (token, secret_arn))
 
     return
 
@@ -512,7 +546,7 @@ def send_ses_email(smtp_host, smtp_port, smtp_username, smtp_password,
         # Send the email
         server.sendmail(sender_email, recipient_email, msg.as_string())
         server.close()
-        logger.info("Email sent successfully!")
+        log.info("Email sent successfully!")
 
     except Exception as e:
         raise RuntimeError(f"Error sending email: {e}")
