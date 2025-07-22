@@ -262,7 +262,7 @@ def create_secret(service_client, arn, token, region, smtp_iam_username):
         log.info("createSecret: Successfully put secret for ARN %s and version %s." % (arn, token))
 
 
-##TODO-update params passed - ie based on what execute_ssm needs
+##TODO-update params passed - ie based on what execute_ssm needs -- add control of whether to even try ssm?
 def set_secret(service_client, arn, token, ssm_document_name, ssm_commands_list, ssm_server_tag, ssm_server_tag_value):
     """Set the secret
 

@@ -56,7 +56,7 @@ variable "tags" {
   default     = {}
 }
 
-variable "secrest_manager_endpoint" {
+variable "secrets_manager_endpoint" {
   description = "Secrets Manager Endpoint to get/set secret"
   type        = string
 }
