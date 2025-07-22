@@ -42,7 +42,7 @@ module "lambda" {
     SES_SMTP_ENDPOINT            = var.ses_smtp_endpoint
     NOTIFICATION_SENDER_EMAIL    = var.notification_sender_email
     NOTIFICATION_RECIPIENT_EMAIL = var.notification_recipient_email
-    SECRETS_MANAGER_ENDPOINT     = var.secrest_manager_endpoint
+    SECRETS_MANAGER_ENDPOINT     = var.secrets_manager_endpoint
     SMTP_IAM_USERNAME            = var.smtp_iam_username
     SSM_ROTATION_DOCUMENT_NAME   = var.ssm_rotation_document_name
     SSM_COMMANDS_LIST            = var.ssm_commands_list
