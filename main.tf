@@ -48,7 +48,6 @@ module "lambda" {
     SSM_COMMANDS_LIST            = var.ssm_commands_list
     SSM_SERVER_TAG               = var.ssm_server_tag
     SSM_SERVER_TAG_VALUE         = var.ssm_server_tag_value
-    # AWS_STS_REGIONAL_ENDPOINTS = var.aws_sts_regional_endpoints
   }
 }
 

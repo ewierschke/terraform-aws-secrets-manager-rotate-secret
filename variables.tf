@@ -90,7 +90,7 @@ variable "ssm_rotation_document_name" {
 variable "ssm_commands_list" {
   description = "List of Commands to send to EC2 host via SSM in order to update credentials use"
   type        = list(string)
-  default     = [""]
+  default     = ["null"]
 }
 
 variable "ssm_server_tag" {
