@@ -20,7 +20,9 @@ from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 
 logger = logging.getLogger()
-logger.setLevel(logging.INFO)
+# Get the log level from the environment variable and default to INFO if not set
+log_level = os.environ.get('LOG_LEVEL', 'INFO')
+logger.setLevel(log_level)
 
 SMTP_REGIONS = [
     "us-east-2",  # US East (Ohio)
@@ -42,14 +44,21 @@ SMTP_REGIONS = [
     "us-gov-east-1",  # AWS GovCloud (US)
 ]
 
-##TODO-replace/update these
-SES_SMTP_HOST = "email-smtp.us-east-1.amazonaws.com"  # Example for us-east-1
-SES_SMTP_PORT = 587
-SENDER_EMAIL = "your_verified_sender@example.com"
-RECIPIENT_EMAIL = "recipient@example.com"
-EMAIL_SUBJECT = "Test Email from Python via SES"
-EMAIL_BODY_TEXT = "This is a test email sent using Python and Amazon SES SMTP."
-EMAIL_BODY_HTML = "<html><body><h1>Hello!</h1><p>This is a <b>test email</b> sent using Python and Amazon SES SMTP.</p></body></html>"
+REGION = os.environ.get("AWS_REGION")
+TEST_STAGE_SES_SMTP_HOST = os.environ.get("SES_SMTP_HOST", "email-smtp.us-east-1.amazonaws.com")# Example for us-east-1
+TEST_STAGE_SES_SMTP_PORT = 587
+TEST_STAGE_SENDER_EMAIL = os.environ.get("SENDER_EMAIL")
+TEST_STAGE_RECIPIENT_EMAIL = os.environ.get("RECIPIENT_EMAIL")
+TEST_STAGE_EMAIL_SUBJECT = "Test Email from Lambda/Python via SES"
+TEST_STAGE_EMAIL_BODY_TEXT = "This is a test email sent after secret rotation using Python and Amazon SES SMTP."
+TEST_STAGE_EMAIL_BODY_HTML = "<html><body><h1>Hello!</h1><p>This is a <b>test email</b> sent after secret rotation using Lambda/Python and Amazon SES SMTP.</p></body></html>"
+
+# And the environment input details
+smtp_iam_user_arn = os.environ['SMTP_IAM_USER_NAME']
+document_name = os.environ['SSM_ROTATION_DOCUMENT']
+SSM_COMMANDS_LIST = os.environ['SSM_COMMANDS_LIST']
+server_key = os.environ['SSM_SERVER_TAG']
+server_key_value = os.environ['SSM_SERVER_TAG_VALUE']
 
 
 # These values are required to calculate the signature. Do not change them.
@@ -81,6 +90,9 @@ def lambda_handler(event, context):
         KeyError: If the event parameters do not contain the expected keys
 
     """
+    logger.info('## EVENT')
+    logger.info(event)
+    logger.info('##')
     arn = event['SecretId']
     token = event['ClientRequestToken']
     step = event['Step']
@@ -108,9 +120,8 @@ def lambda_handler(event, context):
 
     if step == "createSecret":
         logger.info("Executing Create Secret Function")
-        region = os.environ['AWS_REGION']
         #TODO - decide about adding more params
-        create_secret(service_client, arn, token)
+        create_secret(service_client, arn, token, REGION)
 
     elif step == "setSecret":
         logger.info("Executing Set Secret Function")
@@ -150,7 +161,7 @@ def calculate_key(secret_access_key, region):
 
 
 #TODO - decide about adding more params (where to get smtp_iam_user_name)
-def create_secret(service_client, arn, token):
+def create_secret(service_client, arn, token, region):
     """Create the secret
 
     This method first checks for the existence of a secret for the passed in token. If one does not exist, it will generate a
@@ -285,7 +296,7 @@ def test_secret(service_client, arn, token):
     secret_username, secret_password = pending_secret.split(":")
 
     # Create a new smtp client
-    smtp_client = smtplib.SMTP_SSL(smtp_endpoint)
+    smtp_client = smtplib.SMTP_SSL(TEST_STAGE_SES_SMTP_HOST)
 
     # Re-try login attempts to give the new credential time to stabilise
     login_retry = 30
@@ -309,8 +320,8 @@ def test_secret(service_client, arn, token):
         raise RuntimeError(f"Unable to login to smtp server : {smtp_login}")
 
     send_ses_email(
-        SES_SMTP_HOST, SES_SMTP_PORT, secret_username, secret_password,
-        SENDER_EMAIL, RECIPIENT_EMAIL, EMAIL_SUBJECT, EMAIL_BODY_TEXT, EMAIL_BODY_HTML
+        TEST_STAGE_SES_SMTP_HOST, TEST_STAGE_SES_SMTP_PORT, secret_username, secret_password,
+        TEST_STAGE_SENDER_EMAIL, TEST_STAGE_RECIPIENT_EMAIL, TEST_STAGE_EMAIL_SUBJECT, TEST_STAGE_EMAIL_BODY_TEXT, TEST_STAGE_EMAIL_BODY_HTML
     )
 
     return
