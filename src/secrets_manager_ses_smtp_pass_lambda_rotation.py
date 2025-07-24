@@ -363,7 +363,7 @@ def test_secret(service_client, arn, token, ses_smtp_endpoint):
            TEST_STAGE_SENDER_EMAIL, TEST_STAGE_RECIPIENT_EMAIL, TEST_STAGE_EMAIL_SUBJECT, TEST_STAGE_EMAIL_BODY_TEXT, TEST_STAGE_EMAIL_BODY_HTML
         )
     else:
-        log.info("testSecret: TEST_STAGE_RECIPIENT_EMAIL NOT provided, continue...")
+        log.info("testSecret: TEST_STAGE_SENDER_EMAIL NOT provided, continue...")
 
 
 def finish_secret(service_client, arn, token):
