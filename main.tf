@@ -53,20 +53,48 @@ module "lambda" {
 
 data "aws_iam_policy_document" "lambda" {
   statement {
-    sid = "AllowAssumeRole"
+    sid = "AccessSecrets"
 
     actions = [
-      "secretsmanager:GetRandomPassword",
       "secretsmanager:GetSecretValue",
       "secretsmanager:DescribeSecret",
       "secretsmanager:PutSecretValue",
-      "secretsmanager:UpdateSecretVersionStage"
+      "secretsmanager:UpdateSecretVersionStage",
+      # "secretsmanager:UpdateSecret"
     ]
 
     resources = [
       "*"
     ]
   }
+
+  statement {
+    sid = "AllowIAMAccessKey"
+
+    actions = [
+      "iam:CreateAccessKey",
+      "iam:DeleteAccessKey",
+      "iam:ListAccessKeys",
+      "iam:UpdateAccessKey"
+    ]
+
+    resources = [
+      "arn:${data.aws_partition.current.partition}:iam::*:user/${var.smtp_iam_username}"
+    ]
+  }
+
+  # statement {
+  #   sid = "AllowSSMSendCommand"
+
+  #   actions = [
+  #     "ssm:SendCommand"
+  #   ]
+
+  #   resources = [
+  #     "arn:${data.aws_partition.current.partition}:ssm:u${data.aws_region.current.name}::document/${var.ssm_rotation_document_name}",
+  #     #how allow to instance id?
+  #   ]
+  # }
 }
 
 resource "aws_lambda_permission" "events" {
@@ -79,3 +107,4 @@ resource "aws_lambda_permission" "events" {
 # Common
 ##############################
 data "aws_partition" "current" {}
+data "aws_region" "current" {}

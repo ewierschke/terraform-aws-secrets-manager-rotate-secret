@@ -129,7 +129,7 @@ def lambda_handler(event, context):
     ##TODO - add env input details or get another way?
 
     # Setup the client
-    service_client = boto3.client('secretsmanager', endpoint_url=os.environ['SECRETS_MANAGER_ENDPOINT'])
+    service_client = boto3.client('secretsmanager')
 
     # Make sure the version is staged correctly
     metadata = service_client.describe_secret(SecretId=arn)
