@@ -157,7 +157,7 @@ def lambda_handler(event, context):
 
     elif step == "testSecret":
         log.info("Executing Test Secret Function")
-        #TODO - decide about adding more params
+        #TODO - decide about adding more params... need to provide option to send email or just continue
         test_secret(service_client, arn, token, TEST_STAGE_SES_SMTP_ENDPOINT)
 
     elif step == "finishSecret":
@@ -291,7 +291,7 @@ def set_secret(service_client, arn, token, ssm_document_name, ssm_commands_list,
 
     # Execute the SSM command against the tagged servers with the new secret
     ##TODO-update params passed
-    if not ssm_document_name:
+    if not ssm_document_name == "":
         log.info("setSecret: ssm_document_name provided, attempting SSM Run Command")
         ssm_client = boto3.client('ssm')
         command_id = _execute_ssm_run_command(ssm_client, ssm_document_name, ssm_commands_list, ssm_server_tag, ssm_server_tag_value, secret_username, secret_password)
@@ -330,36 +330,40 @@ def test_secret(service_client, arn, token, ses_smtp_endpoint):
 
     secret_username, secret_password = pending_secret.split(":")
 
-    # Create a new smtp client
-    smtp_client = smtplib.SMTP_SSL(ses_smtp_endpoint)
+    if not TEST_STAGE_SENDER_EMAIL == "":
+        # Create a new smtp client
+        smtp_client = smtplib.SMTP_SSL(ses_smtp_endpoint)
 
-    # Re-try login attempts to give the new credential time to stabilise
-    login_retry = 15
-    successful = False
+        # Re-try login attempts to give the new credential time to stabilise
+        login_retry = 15
+        successful = False
 
-    # Loop with a delay to give the time for a credential to activate
-    while login_retry != 0 and not successful:
+        # Loop with a delay to give the time for a credential to activate
+        while login_retry != 0 and not successful:
 
-        # Try a login to the server
-        try:
-            smtp_login = smtp_client.login(secret_username, secret_password)
-        except:
-            log.info("login unsuccessful: %s", login_retry)
-            time.sleep(1)
-            login_retry -= 1
-            pass
-        else:
-            if smtp_login[0] == 235:
-                successful = True
+            # Try a login to the server
+            try:
+                smtp_login = smtp_client.login(secret_username, secret_password)
+            except:
+                log.info("login unsuccessful: %s", login_retry)
+                time.sleep(1)
+                login_retry -= 1
+                pass
+            else:
+                if smtp_login[0] == 235:
+                    successful = True
 
-    if not successful:
-        raise RuntimeError(f"Unable to login to smtp server : {smtp_login}")
+        if not successful:
+            raise RuntimeError(f"Unable to login to smtp server : {smtp_login}")
 
-    #TODO-revisit vars to pass
-    send_ses_email(
-        ses_smtp_endpoint, TEST_STAGE_SES_SMTP_PORT, secret_username, secret_password,
-        TEST_STAGE_SENDER_EMAIL, TEST_STAGE_RECIPIENT_EMAIL, TEST_STAGE_EMAIL_SUBJECT, TEST_STAGE_EMAIL_BODY_TEXT, TEST_STAGE_EMAIL_BODY_HTML
-    )
+        #TODO-revisit vars to pass
+
+        send_ses_email(
+          ses_smtp_endpoint, TEST_STAGE_SES_SMTP_PORT, secret_username, secret_password,
+           TEST_STAGE_SENDER_EMAIL, TEST_STAGE_RECIPIENT_EMAIL, TEST_STAGE_EMAIL_SUBJECT, TEST_STAGE_EMAIL_BODY_TEXT, TEST_STAGE_EMAIL_BODY_HTML
+        )
+    else:
+        log.info("testSecret: TEST_STAGE_RECIPIENT_EMAIL NOT provided, continue...")
 
 
 def finish_secret(service_client, arn, token):

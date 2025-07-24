@@ -91,7 +91,7 @@ data "aws_iam_policy_document" "lambda" {
   #   ]
 
   #   resources = [
-  #     "arn:${data.aws_partition.current.partition}:ssm:u${data.aws_region.current.name}::document/${var.ssm_rotation_document_name}",
+  #     "arn:${data.aws_partition.current.partition}:ssm:${data.aws_region.current.name}::document/${var.ssm_rotation_document_name}",
   #     #how allow to instance id?
   #   ]
   # }

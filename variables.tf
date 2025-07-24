@@ -67,13 +67,15 @@ variable "ses_smtp_endpoint" {
 }
 
 variable "notification_sender_email" {
-  description = "SES Verified identity/email address used in FROM field of notification email after rotation"
+  description = "SES Verified identity/email address used in FROM field of notification email after rotation, if empty string function won't send notification of rotation"
   type        = string
+  default     = ""
 }
 
 variable "notification_recipient_email" {
   description = "Email address to send notification email to after rotation"
   type        = string
+  default     = ""
 }
 
 variable "smtp_iam_username" {
