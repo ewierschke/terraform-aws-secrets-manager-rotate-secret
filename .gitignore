@@ -23,3 +23,6 @@ __pycache__
 
 # lambda builds
 builds/
+
+venv/
+stash/
