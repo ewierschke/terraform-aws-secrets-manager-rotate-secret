@@ -219,47 +219,48 @@ def create_secret(service_client, arn, token, region, smtp_iam_username):
         #exclude_characters = os.environ['EXCLUDE_CHARACTERS'] if 'EXCLUDE_CHARACTERS' in os.environ else '/@"\'\\'
         #REPLACE HERE w SMTP-- Generate a random password
         #passwd = service_client.get_random_password(ExcludeCharacters=exclude_characters)
+        raise Exception("AWSPENDING secret doesn't exist to get on service")
 
-        # Create new Access key and secret key
-        iam_client = boto3.client('iam')
+    # Create new Access key and secret key
+    iam_client = boto3.client('iam')
 
-        keys_response = iam_client.list_access_keys(UserName=smtp_iam_username)
-        access_keys = sorted(keys_response['AccessKeyMetadata'], key=lambda x: x['CreateDate'])
+    keys_response = iam_client.list_access_keys(UserName=smtp_iam_username)
+    access_keys = sorted(keys_response['AccessKeyMetadata'], key=lambda x: x['CreateDate'])
 
-        #IAM user can have 2 keys, delete the oldest before creating a new one
-        #or should the old key only be set to inactive in case it is still needed(ie revert?)
-        if len(access_keys) >= 2:
-            oldest_key_id = access_keys[0]['AccessKeyId']
-            iam_client.delete_access_key(UserName=smtp_iam_username, AccessKeyId=oldest_key_id)
-            log.info("Deleted oldest access key for %s: %s", smtp_iam_username, oldest_key_id)
+    #IAM user can have 2 keys, delete the oldest before creating a new one
+    #or should the old key only be set to inactive in case it is still needed(ie revert?)
+    if len(access_keys) >= 2:
+        oldest_key_id = access_keys[0]['AccessKeyId']
+        iam_client.delete_access_key(UserName=smtp_iam_username, AccessKeyId=oldest_key_id)
+        log.info("Deleted oldest access key for %s: %s", smtp_iam_username, oldest_key_id)
 
-        new_key = iam_client.create_access_key(
-            UserName=smtp_iam_username
+    new_key = iam_client.create_access_key(
+        UserName=smtp_iam_username
+    )
+
+    new_access_key = new_key['AccessKey']['AccessKeyId']
+    new_secret_key = new_key['AccessKey']['SecretAccessKey']
+
+    new_smtp_secret = calculate_key(new_secret_key, region)
+    new_secret = f'{new_access_key}:{new_smtp_secret}'
+
+    # Put the secret
+    try:
+        service_client.put_secret_value(SecretId=arn, ClientRequestToken=token, SecretString=new_secret, VersionStages=['AWSPENDING'])
+    except botocore.exceptions.ClientError as error:
+
+        print(error)
+        print("Put secret failed, removing IAM key from user")
+        iam_client.delete_access_key(
+            UserName=smtp_iam_username,
+            AccessKeyId=new_access_key
         )
 
-        new_access_key = new_key['AccessKey']['AccessKeyId']
-        new_secret_key = new_key['AccessKey']['SecretAccessKey']
+        raise Exception("Secret couldn't be updated, removing IAM key pair")
 
-        new_smtp_secret = calculate_key(new_secret_key, region)
-        new_secret = f'{new_access_key}:{new_smtp_secret}'
-
-        # Put the secret
-        try:
-            service_client.put_secret_value(SecretId=arn, ClientRequestToken=token, SecretString=new_secret, VersionStages=['AWSPENDING'])
-        except botocore.exceptions.ClientError as error:
-
-            print(error)
-            print("Put secret failed, removing IAM key from user")
-            iam_client.delete_access_key(
-                UserName=smtp_iam_username,
-                AccessKeyId=new_access_key
-            )
-
-            raise Exception("Secret couldn't be updated, removing IAM key pair")
-
-        #keep for ref?
-        #service_client.put_secret_value(SecretId=arn, ClientRequestToken=token, SecretString=passwd['RandomPassword'], VersionStages=['AWSPENDING'])
-        log.info("createSecret: Successfully put secret for ARN %s and version %s.", arn, token)
+    #keep for ref?
+    #service_client.put_secret_value(SecretId=arn, ClientRequestToken=token, SecretString=passwd['RandomPassword'], VersionStages=['AWSPENDING'])
+    log.info("createSecret: Successfully put secret for ARN %s and version %s.", arn, token)
 
 
 ##TODO-update params passed - ie based on what execute_ssm needs -- add control of whether to even try ssm?
