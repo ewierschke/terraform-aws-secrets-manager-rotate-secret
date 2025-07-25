@@ -74,6 +74,7 @@ data "aws_iam_policy_document" "lambda" {
     actions = [
       "iam:CreateAccessKey",
       "iam:DeleteAccessKey",
+      "iam:GetUser",
       "iam:ListAccessKeys",
       "iam:UpdateAccessKey"
     ]
