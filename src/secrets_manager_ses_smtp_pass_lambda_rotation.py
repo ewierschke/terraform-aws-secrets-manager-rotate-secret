@@ -121,7 +121,7 @@ def lambda_handler(event, context):
 
         KeyError: If the event parameters do not contain the expected keys
     """
-    log.info("Lambda function ARN:", context.invoked_function_arn)
+    log.info("Lambda function ARN: %s", context.invoked_function_arn)
     log.info("AWS Event: %s", event)
 
     arn = event['SecretId']
