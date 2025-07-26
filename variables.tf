@@ -92,10 +92,10 @@ variable "ssm_rotation_document_name" {
 #TODO-revisit-lambda module only accepts map of strings as env vars... maybe convert list to string?
 variable "ssm_commands_list" {
   description = "List of Commands to send to EC2 host via SSM in order to update credentials use"
-  # type        = list(string)
-  type = string
-  # default     = ["null"]
-  default = ""
+  type        = list(string)
+  # type = string
+  default     = ["null"]
+  # default = ""
 }
 
 variable "ssm_server_tag" {

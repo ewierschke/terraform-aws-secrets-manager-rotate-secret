@@ -45,7 +45,7 @@ module "lambda" {
     SECRETS_MANAGER_ENDPOINT     = var.secrets_manager_endpoint
     SMTP_IAM_USERNAME            = var.smtp_iam_username
     SSM_ROTATION_DOCUMENT_NAME   = var.ssm_rotation_document_name
-    SSM_COMMANDS_LIST            = var.ssm_commands_list
+    SSM_COMMANDS_LIST            = jsonencode(var.ssm_commands_list)
     SSM_SERVER_TAG               = var.ssm_server_tag
     SSM_SERVER_TAG_VALUE         = var.ssm_server_tag_value
   }
