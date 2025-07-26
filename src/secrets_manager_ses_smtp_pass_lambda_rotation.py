@@ -135,17 +135,17 @@ def lambda_handler(event, context):
     metadata = service_client.describe_secret(SecretId=arn)
     if not metadata['RotationEnabled']:
         log.error("Secret %s is not enabled for rotation", arn)
-        raise ValueError("Secret %s is not enabled for rotation", arn)
+        raise ValueError(f"Secret {arn} is not enabled for rotation")
     versions = metadata['VersionIdsToStages']
     if token not in versions:
         log.error("Secret version %s has no stage for rotation of secret %s.", token, arn)
-        raise ValueError("Secret version %s has no stage for rotation of secret %s.", token, arn)
+        raise ValueError(f"Secret version {token} has no stage for rotation of secret {arn}.")
     if "AWSCURRENT" in versions[token]:
         log.info("Secret version %s already set as AWSCURRENT for secret %s.", token, arn)
         return
     elif "AWSPENDING" not in versions[token]:
         log.error("Secret version %s not set as AWSPENDING for rotation of secret %s.", token, arn)
-        raise ValueError("Secret version %s not set as AWSPENDING for rotation of secret %s.", token, arn)
+        raise ValueError(f"Secret version {token} not set as AWSPENDING for rotation of secret {arn}.")
 
     if step == "createSecret":
         log.info("Executing Create Secret Function")
@@ -165,7 +165,7 @@ def lambda_handler(event, context):
         finish_secret(service_client, arn, token)
     else:
         log.error("lambda_handler: Invalid step parameter %s for secret %s", step, arn)
-        raise ValueError("Invalid step parameter %s for secret %s", step, arn)
+        raise ValueError(f"Invalid step parameter {step} for secret {arn}")
 
 
 def create_secret(service_client, arn, token, region, smtp_iam_username):
@@ -331,11 +331,10 @@ def test_secret(service_client, arn, token, ses_smtp_endpoint):
             # Try a login to the server
             try:
                 smtp_login = smtp_client.login(secret_username, secret_password)
-            except:
-                log.info("login unsuccessful: %s", login_retry)
+            except Exception as e:
+                log.info("error: %s login unsuccessful: %s", e, login_retry)
                 time.sleep(1)
                 login_retry -= 1
-                pass
             else:
                 if smtp_login[0] == 235:
                     successful = True
@@ -467,7 +466,7 @@ def _check_invocation_success(ssm_client, command_id):
         command_invocation_status = ssm_client.list_command_invocations(CommandId=command_id)['CommandInvocations']
         for invocation in command_invocation_status:
 
-            log.info(f"finishSecret: Status of SSM Run Command on instance {invocation['InstanceId']} is {invocation['Status']}")
+            log.info("finishSecret: Status of SSM Run Command on instance %s is %s", invocation['InstanceId'], invocation['Status'])
             if invocation['Status'] != 'Pending' and invocation['Status'] != 'InProgress':
                 complete_invocations += 1
 
@@ -520,15 +519,15 @@ def _get_secret_dict(secrets_manager_service_client, secret_arn, stage, token=No
     plaintext = secret['SecretString']
     try:
         secret_dict = json.loads(plaintext)
-    except Exception:
+    except Exception as exc:
         # wrapping json parser exceptions to avoid possible password disclosure
         log.error("Invalid secret value json for secret %s.", secret_arn)
-        raise ValueError("Invalid secret value json for secret %s.", secret_arn)
+        raise ValueError(f"Invalid secret value json for secret {secret_arn}.") from exc
 
     # Validates if there is a user associated to the secret
     if "user_arn" not in secret_dict:
         log.error("createSecret: secret %s has no user_arn defined.", secret_arn)
-        raise KeyError("createSecret: secret %s has no user_arn defined.", secret_arn)
+        raise KeyError(f"createSecret: secret {secret_arn} has no user_arn defined.")
 
     return secret_dict
 
@@ -547,7 +546,7 @@ def _verify_user_name(secret):
     secret_user_name = secret["username"]
     if env_iam_smtp_user_name != secret_user_name:
         log.error("User %s is not allowed to use this Lambda function for rotation", secret_user_name)
-        raise ValueError("User %s is not allowed to use this Lambda function for rotation", secret_user_name)
+        raise ValueError(f"User {secret_user_name} is not allowed to use this Lambda function for rotation")
 
 
 def _send_ses_email(smtp_host, smtp_port, smtp_username, smtp_password,
@@ -604,7 +603,7 @@ def _send_ses_email(smtp_host, smtp_port, smtp_username, smtp_password,
         log.info("Email sent successfully!")
 
     except Exception as e:
-        raise RuntimeError(f"Error sending email: {e}")
+        raise RuntimeError(f"Error sending email: {e}") from e
 
 
 def _get_iam_user_arn(iam_service_client, username):
@@ -629,4 +628,3 @@ def _get_iam_user_arn(iam_service_client, username):
     except Exception as e:
         print(f"An error occurred: {e}")
         return None
-    
