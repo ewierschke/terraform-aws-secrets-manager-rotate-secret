@@ -205,7 +205,8 @@ def create_secret(service_client, arn, token, region, smtp_iam_username):
         access_keys = sorted(keys_response['AccessKeyMetadata'], key=lambda x: x['CreateDate'])
 
         #IAM user can have 2 keys, delete the oldest before creating a new one
-        #TODO-or should the old key only be set to inactive in case it is still needed(ie revert?), or first try to del inactive
+        #TODO-or should the old key only be set to inactive (in finish_secret step to ensure old still works until new is successfully set in instance id) in case it is still needed(ie revert?), 
+        #first try to del inactive then oldest?
         if len(access_keys) >= 2:
             oldest_key_id = access_keys[0]['AccessKeyId']
             iam_client.delete_access_key(UserName=smtp_iam_username, AccessKeyId=oldest_key_id)

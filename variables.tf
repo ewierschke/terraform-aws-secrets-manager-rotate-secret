@@ -74,7 +74,7 @@ variable "smtp_iam_username" {
 }
 
 variable "ssm_rotation_document_name" {
-  description = "SSM Document name to use with Command List for updating credentials on EC2 servers with ssm_server_tag_value"
+  description = "SSM Document name to use with Command List for updating credentials on EC2 servers with ssm_server_tag_value, if empty string function won't attempt ssm:SendCommand"
   type        = string
   default     = ""
 }
@@ -82,7 +82,13 @@ variable "ssm_rotation_document_name" {
 variable "ssm_commands_list" {
   description = "List of Commands to send to EC2 host via SSM in order to update credentials use"
   type        = list(string)
-  default     = ["null"]
+  default     = [""]
+}
+
+variable "ssm_rotate_on_ec2_instance_id" {
+  description = "EC2 instance ID on which to execute SSM commands to rotate secret being used"
+  type        = string
+  default     = ""
 }
 
 variable "ssm_server_tag" {

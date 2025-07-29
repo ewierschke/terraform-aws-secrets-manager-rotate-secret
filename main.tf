@@ -83,7 +83,10 @@ data "aws_iam_policy_document" "lambda" {
     ]
   }
 
-  statement {
+  dynamic statement {
+    for_each = var.ssm_rotate_on_ec2_instance_id != "" ? [1] : []
+
+    content {
     sid = "AllowSSMSendCommand"
 
     actions = [
@@ -92,16 +95,17 @@ data "aws_iam_policy_document" "lambda" {
 
     resources = [
       "arn:${data.aws_partition.current.partition}:ssm:${data.aws_region.current.name}::document/${var.ssm_rotation_document_name}",
-      "arn:aws:ec2:*:*:instance/*",
+      "arn:${data.aws_partition.current.partition}:ec2:${data.aws_region.current.name}:${data.aws_caller_identity.current.account_id}:instance/${var.ssm_rotate_on_ec2_instance_id}",
     ]
 
-    condition {
-      test     = "StringEquals"
-      variable = "ec2:ResourceTag/${var.ssm_server_tag}"
+    # condition {
+    #   test     = "StringEquals"
+    #   variable = "ec2:ResourceTag/${var.ssm_server_tag}"
 
-      values = [
-        "${var.ssm_server_tag_value}"
-      ]
+    #   values = [
+    #     "${var.ssm_server_tag_value}"
+    #   ]
+    # }
     }
   }
 }
@@ -117,3 +121,4 @@ resource "aws_lambda_permission" "events" {
 ##############################
 data "aws_partition" "current" {}
 data "aws_region" "current" {}
+data "aws_caller_identity" "current" {}
