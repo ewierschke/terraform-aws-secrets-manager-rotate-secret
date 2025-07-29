@@ -1,4 +1,4 @@
-"""Scripte to handle SMTP credential rotation, triggered by SecretsManager."""
+"""Script to handle SMTP credential rotation, triggered by SecretsManager."""
 #!/usr/bin/env python3
 
 #ref-template from https://github.com/aws-samples/aws-secrets-manager-rotation-lambdas/blob/master/SecretsManagerRotationTemplate/lambda_function.py

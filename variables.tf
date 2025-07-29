@@ -40,16 +40,6 @@ variable "log_level" {
   }
 }
 
-# variable "aws_sts_regional_endpoints" {
-#   description = "Sets AWS STS endpoint resolution logic for boto3."
-#   type        = string
-#   default     = "regional"
-#   validation {
-#     condition     = contains(["regional", "legacy"], var.aws_sts_regional_endpoints)
-#     error_message = "Valid values for aws sts regional endpoints are (regional, legacy)."
-#   }
-# }
-
 variable "tags" {
   description = "Tags for resource"
   type        = map(string)
@@ -89,13 +79,10 @@ variable "ssm_rotation_document_name" {
   default     = ""
 }
 
-#TODO-revisit-lambda module only accepts map of strings as env vars... maybe convert list to string?
 variable "ssm_commands_list" {
   description = "List of Commands to send to EC2 host via SSM in order to update credentials use"
   type        = list(string)
-  # type = string
   default     = ["null"]
-  # default = ""
 }
 
 variable "ssm_server_tag" {

@@ -60,7 +60,6 @@ data "aws_iam_policy_document" "lambda" {
       "secretsmanager:DescribeSecret",
       "secretsmanager:PutSecretValue",
       "secretsmanager:UpdateSecretVersionStage",
-      # "secretsmanager:UpdateSecret"
     ]
 
     resources = [
@@ -84,18 +83,27 @@ data "aws_iam_policy_document" "lambda" {
     ]
   }
 
-  # statement {
-  #   sid = "AllowSSMSendCommand"
+  statement {
+    sid = "AllowSSMSendCommand"
 
-  #   actions = [
-  #     "ssm:SendCommand"
-  #   ]
+    actions = [
+      "ssm:SendCommand"
+    ]
 
-  #   resources = [
-  #     "arn:${data.aws_partition.current.partition}:ssm:${data.aws_region.current.name}::document/${var.ssm_rotation_document_name}",
-  #     #how allow to instance id?
-  #   ]
-  # }
+    resources = [
+      "arn:${data.aws_partition.current.partition}:ssm:${data.aws_region.current.name}::document/${var.ssm_rotation_document_name}",
+      "arn:aws:ec2:*:*:instance/*",
+    ]
+
+    condition {
+      test     = "StringEquals"
+      variable = "ec2:ResourceTag/${var.ssm_server_tag}"
+
+      values = [
+        "${var.ssm_server_tag_value}"
+      ]
+    }
+  }
 }
 
 resource "aws_lambda_permission" "events" {
