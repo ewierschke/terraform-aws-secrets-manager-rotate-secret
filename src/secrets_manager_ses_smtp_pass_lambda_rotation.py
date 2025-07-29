@@ -149,11 +149,9 @@ def lambda_handler(event, context):
 
     if step == "createSecret":
         log.info("Executing Create Secret Function")
-        #TODO - decide about adding more params
         create_secret(service_client, arn, token, REGION, SMTP_IAM_USERNAME)
     elif step == "setSecret":
         log.info("Executing Set Secret Function")
-        #TODO - decide about adding more params
         set_secret(service_client, arn, token, SSM_ROTATION_DOCUMENT_NAME, SSM_COMMANDS_LIST, SSM_SERVER_TAG, SSM_SERVER_TAG_VALUE)
     elif step == "testSecret":
         log.info("Executing Test Secret Function")
@@ -161,7 +159,6 @@ def lambda_handler(event, context):
         test_secret(service_client, arn, token, TEST_STAGE_SES_SMTP_ENDPOINT)
     elif step == "finishSecret":
         log.info("Executing Finish Secret Function")
-        #TODO - decide about adding more params
         finish_secret(service_client, arn, token)
     else:
         log.error("lambda_handler: Invalid step parameter %s for secret %s", step, arn)
@@ -273,10 +270,11 @@ def set_secret(service_client, arn, token, ssm_document_name, ssm_commands_list,
     secret_password = pending_secret['SMTPPassword']
 
     # If SSM Document name provided, Execute the SSM command against the tagged servers with the new secret
+    #TODO-test w commands
     if not ssm_document_name == "":
         log.info("setSecret: ssm_document_name provided, attempting SSM Run Command")
         ssm_client = boto3.client('ssm')
-        ##TODO-update params passed
+        #TODO-update params passed
         command_id = _execute_ssm_run_command(ssm_client, ssm_document_name, ssm_commands_list, ssm_server_tag, ssm_server_tag_value, secret_username, secret_password)
 
         # Wait for invocations to appear for the command
@@ -331,8 +329,13 @@ def test_secret(service_client, arn, token, ses_smtp_endpoint):
             # Try a login to the server
             try:
                 smtp_login = smtp_client.login(secret_username, secret_password)
-            except Exception as e:
-                log.info("error: %s login unsuccessful: %s", e, login_retry)
+            except smtplib.SMTPAuthenticationError as e:
+                #guessing at error being raised to satisfy linter-revisit
+                log.info("error: %s: login unsuccessful: %s", e, login_retry)
+                time.sleep(1)
+                login_retry -= 1
+            except Exception as e:  # pylint: disable=broad-exception-caught
+                log.info("error: %s: login unsuccessful: %s", e, login_retry)
                 time.sleep(1)
                 login_retry -= 1
             else:
@@ -345,7 +348,8 @@ def test_secret(service_client, arn, token, ses_smtp_endpoint):
         #TODO-revisit vars to pass
         _send_ses_email(
           ses_smtp_endpoint, TEST_STAGE_SES_SMTP_PORT, secret_username, secret_password,
-           TEST_STAGE_SENDER_EMAIL, TEST_STAGE_RECIPIENT_EMAIL, TEST_STAGE_EMAIL_SUBJECT, TEST_STAGE_EMAIL_BODY_TEXT, TEST_STAGE_EMAIL_BODY_HTML
+           TEST_STAGE_SENDER_EMAIL, TEST_STAGE_RECIPIENT_EMAIL, TEST_STAGE_EMAIL_SUBJECT, 
+           TEST_STAGE_EMAIL_BODY_TEXT, TEST_STAGE_EMAIL_BODY_HTML
         )
     else:
         log.info("testSecret: TEST_STAGE_SENDER_EMAIL NOT provided, continue...")
@@ -404,7 +408,6 @@ def _calculate_key(secret_access_key, region):
     return smtp_password.decode('utf-8')
 
 
-#TODO-should likely take (from env?) in a python formated list of commands to pass to ssm send_command instead of documet_name
 def _execute_ssm_run_command(ssm_client, document_name, ssm_commands_list, server_key, server_key_value, secret_username, secret_password):
     # Execute the provided SSM document to update and restart the email server
 
@@ -549,6 +552,7 @@ def _verify_user_name(secret):
         raise ValueError(f"User {secret_user_name} is not allowed to use this Lambda function for rotation")
 
 
+#TODO-test
 def _send_ses_email(smtp_host, smtp_port, smtp_username, smtp_password,
                    sender_email, recipient_email, subject, body_text, body_html=None):
     """
@@ -625,6 +629,6 @@ def _get_iam_user_arn(iam_service_client, username):
     except iam_service_client.exceptions.NoSuchEntityException:
         print(f"IAM user '{username}' not found.")
         return None
-    except Exception as e:
+    except Exception as e: # pylint: disable=broad-exception-caught
         print(f"An error occurred: {e}")
         return None
