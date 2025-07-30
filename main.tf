@@ -46,8 +46,9 @@ module "lambda" {
     SMTP_IAM_USERNAME            = var.smtp_iam_username
     SSM_ROTATION_DOCUMENT_NAME   = var.ssm_rotation_document_name
     SSM_COMMANDS_LIST            = jsonencode(var.ssm_commands_list)
-    SSM_SERVER_TAG               = var.ssm_server_tag
-    SSM_SERVER_TAG_VALUE         = var.ssm_server_tag_value
+    # SSM_SERVER_TAG               = var.ssm_server_tag
+    # SSM_SERVER_TAG_VALUE         = var.ssm_server_tag_value
+    SSM_ROTATE_ON_EC2_INSTANCE_ID = var.ssm_rotate_on_ec2_instance_id
   }
 }
 
@@ -83,29 +84,29 @@ data "aws_iam_policy_document" "lambda" {
     ]
   }
 
-  dynamic statement {
+  dynamic "statement" {
     for_each = var.ssm_rotate_on_ec2_instance_id != "" ? [1] : []
 
     content {
-    sid = "AllowSSMSendCommand"
+      sid = "AllowSSMSendCommand"
 
-    actions = [
-      "ssm:SendCommand"
-    ]
+      actions = [
+        "ssm:SendCommand"
+      ]
 
-    resources = [
-      "arn:${data.aws_partition.current.partition}:ssm:${data.aws_region.current.name}::document/${var.ssm_rotation_document_name}",
-      "arn:${data.aws_partition.current.partition}:ec2:${data.aws_region.current.name}:${data.aws_caller_identity.current.account_id}:instance/${var.ssm_rotate_on_ec2_instance_id}",
-    ]
+      resources = [
+        "arn:${data.aws_partition.current.partition}:ssm:${data.aws_region.current.name}::document/${var.ssm_rotation_document_name}",
+        "arn:${data.aws_partition.current.partition}:ec2:${data.aws_region.current.name}:${data.aws_caller_identity.current.account_id}:instance/${var.ssm_rotate_on_ec2_instance_id}",
+      ]
 
-    # condition {
-    #   test     = "StringEquals"
-    #   variable = "ec2:ResourceTag/${var.ssm_server_tag}"
+      # condition {
+      #   test     = "StringEquals"
+      #   variable = "ec2:ResourceTag/${var.ssm_server_tag}"
 
-    #   values = [
-    #     "${var.ssm_server_tag_value}"
-    #   ]
-    # }
+      #   values = [
+      #     "${var.ssm_server_tag_value}"
+      #   ]
+      # }
     }
   }
 }

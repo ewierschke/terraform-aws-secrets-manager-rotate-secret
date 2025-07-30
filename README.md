@@ -1,1 +1,1 @@
-# terraform-aws-secrets-manager-rotate-secret
+# terraform-aws-secrets-manager-rotate-ses-secret
