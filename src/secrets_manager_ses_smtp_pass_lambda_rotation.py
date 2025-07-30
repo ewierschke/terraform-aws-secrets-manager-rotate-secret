@@ -91,8 +91,6 @@ TEST_STAGE_RECIPIENT_EMAIL = os.environ.get("NOTIFICATION_RECIPIENT_EMAIL")
 SMTP_IAM_USERNAME = os.environ['SMTP_IAM_USERNAME']
 SSM_ROTATION_DOCUMENT_NAME = os.environ['SSM_ROTATION_DOCUMENT_NAME']
 SSM_COMMANDS_LIST = os.environ['SSM_COMMANDS_LIST']
-# SSM_SERVER_TAG = os.environ['SSM_SERVER_TAG']
-# SSM_SERVER_TAG_VALUE = os.environ['SSM_SERVER_TAG_VALUE']
 SSM_ROTATE_ON_EC2_INSTANCE_ID = os.environ['SSM_ROTATE_ON_EC2_INSTANCE_ID']
 
 # These values are required to calculate the signature. Do not change them.
@@ -319,7 +317,7 @@ def set_secret(service_client, arn, token, ssm_document_name, ssm_commands_list,
         # Check all complete successfully
         _check_invocation_success(ssm_client, command_id)
     else:
-        log.info("setSecret: ssm_document_name NOT provided, no SSM actions, continue...")
+        log.info("setSecret: ssm_document_name or instance_id NOT provided, no SSM actions, continue...")
 
     log.info("setSecret: Successfully set secret for %s against %s.", arn,
               ssm_rotate_on_ec2_instance_id)
