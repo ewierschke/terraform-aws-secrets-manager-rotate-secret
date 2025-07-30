@@ -230,7 +230,7 @@ def create_secret(service_client, arn, token, region, smtp_iam_username):
 
         #check again for current access keys
         keys_response = iam_client.list_access_keys(UserName=smtp_iam_username)
-        access_keys = sorted(keys_response['AccessKeyMetadata'], key=lambda x: x['CreateDate'])  
+        access_keys = sorted(keys_response['AccessKeyMetadata'], key=lambda x: x['CreateDate'])
         if len(access_keys) >= 2:
             oldest_key_id = access_keys[0]['AccessKeyId']
             iam_client.delete_access_key(UserName=smtp_iam_username, AccessKeyId=oldest_key_id)
@@ -299,13 +299,16 @@ def set_secret(service_client, arn, token, ssm_document_name, ssm_commands_list,
     secret_username = pending_secret['AccessKeyId']
     secret_password = pending_secret['SMTPPassword']
 
-    # If SSM Document name provided, Execute the SSM command against the tagged servers with the
-    #  new secret
+    # If SSM Document name provided, and ec2 instance id
+    # Execute the SSM command against the tagged servers with the new secret
     #TODO-test w commands
-    if not ssm_document_name == "":
-        log.info("setSecret: ssm_document_name provided, attempting SSM Run Command")
+    if not ssm_document_name == "" and not ssm_rotate_on_ec2_instance_id == "":
+        log.info("setSecret: ssm_document_name provided: %s, " \
+        "attempting SSM Run Command against ec2 instance: %s", ssm_document_name, 
+        ssm_rotate_on_ec2_instance_id)
+
         ssm_client = boto3.client('ssm')
-        #TODO-update params passed
+
         command_id = _execute_ssm_run_command(ssm_client, ssm_document_name, ssm_commands_list,
                                               ssm_rotate_on_ec2_instance_id, secret_username,
                                               secret_password)
@@ -448,9 +451,11 @@ def _calculate_key(secret_access_key, region):
 def _execute_ssm_run_command(ssm_client, document_name, ssm_commands_list, ec2_instance_id, secret_username, secret_password):
     # Execute the provided SSM document to update and restart the email server
 
-    log.info("_execute_ssm_run_command: SSM Commands list to execute %s.", ssm_commands_list)
+    #needs to be a list, but lambda module only takes string for env var
+    command_list = list(ssm_commands_list)
+    log.info("_execute_ssm_run_command: SSM Commands list to execute %s.", command_list)
 
-    #TODO-need to append generated secret_username and secret_password into appropriate ssm_commands_list
+    #TODO-need to append/replace generated secret_username and secret_password into appropriate ssm_commands_list
 
     response = ssm_client.send_command(
         InstanceIds=[
@@ -462,7 +467,7 @@ def _execute_ssm_run_command(ssm_client, document_name, ssm_commands_list, ec2_i
         },
         Comment="Update SMTP config after SES credential rotation",
         Parameters={
-            "commands": ssm_commands_list
+            "commands": command_list
         },
         TimeoutSeconds=60,
     )

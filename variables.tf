@@ -86,19 +86,7 @@ variable "ssm_commands_list" {
 }
 
 variable "ssm_rotate_on_ec2_instance_id" {
-  description = "EC2 instance ID on which to execute SSM commands to rotate secret being used"
+  description = "EC2 instance ID on which to execute SSM commands to rotate secret being used, if empty string function won't attempt ssm:SendCommand"
   type        = string
   default     = ""
 }
-
-# variable "ssm_server_tag" {
-#   description = "Tag key used along with tag value to identify EC2 host to run SSM commands list against"
-#   type        = string
-#   default     = ""
-# }
-
-# variable "ssm_server_tag_value" {
-#   description = "Tag value used along with tag key to identify EC2 host to run SSM commands list against"
-#   type        = string
-#   default     = ""
-# }
