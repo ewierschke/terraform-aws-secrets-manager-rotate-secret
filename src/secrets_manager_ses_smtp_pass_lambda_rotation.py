@@ -473,15 +473,15 @@ def _execute_ssm_run_command(ssm_client, document_name, ssm_commands_list, ec2_i
             # 'CloudWatchLogGroupName':
         },
         Comment="Run /usr/local/bin/rotate_smtp.sh after SES credential rotation",
-        Parameters={
-            "commands": ssm_commands_list
-        },
         # Parameters={
-        #     'commands': [
-        #         f'export SecretId="{secret_arn}"',
-        #         f'bash /usr/local/bin/rotate_smtp.sh $SecretId'
-        #     ]
+        #     "commands": ssm_commands_list
         # },
+        Parameters={
+            'commands': [
+                f'export SecretId="{secret_arn}"',
+                f'bash /usr/local/bin/rotate_smtp.sh $SecretId'
+            ]
+        },
         TimeoutSeconds=60,
     )
     #   Targets=[
