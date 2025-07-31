@@ -99,6 +99,21 @@ data "aws_iam_policy_document" "lambda" {
       ]
     }
   }
+
+    dynamic "statement" {
+    for_each = var.create_ssm_parameter != false ? [1] : []
+
+    content {
+      sid = "AllowSSMGetParameter"
+
+      actions = [
+        "ssm:GetParameter"
+      ]
+
+      resources = [
+        "arn:${data.aws_partition.current.partition}:ssm:${data.aws_region.current.name}:${data.aws_caller_identity.current.account_id}:parameter/${local.ssm_commands_list_parameter_name}"]
+    }
+  }
 }
 
 locals {
