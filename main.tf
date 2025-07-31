@@ -46,7 +46,7 @@ module "lambda" {
     SMTP_IAM_USERNAME            = var.smtp_iam_username
     SSM_ROTATION_DOCUMENT_NAME   = var.ssm_rotation_document_name
     # SSM_COMMANDS_LIST            = jsonencode(var.ssm_commands_list)
-    SSM_COMMANDS_LIST_PARAMETER_NAME = var.ssm_commands_list_parameter_name
+    SSM_COMMANDS_LIST_PARAMETER_NAME = local.ssm_commands_list_parameter_name
     SSM_ROTATE_ON_EC2_INSTANCE_ID    = var.ssm_rotate_on_ec2_instance_id
   }
 }
@@ -102,7 +102,7 @@ data "aws_iam_policy_document" "lambda" {
 }
 
 locals {
-  ssm_commands_list_parameter_name = var.ssm_commands_list_parameter_name != "" ? var.ssm_commands_list_parameter_name : "${var.project_name}_ssm_commands_list"
+  ssm_commands_list_parameter_name = var.ssm_commands_list_parameter_name != "" ? var.ssm_commands_list_parameter_name : "/lambda/${var.project_name}/ssm_commands_list"
 }
 
 resource "aws_lambda_permission" "secretmanager" {

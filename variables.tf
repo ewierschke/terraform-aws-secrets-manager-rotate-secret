@@ -94,7 +94,7 @@ variable "ssm_commands_list_parameter_name" {
 variable "ssm_commands_list" {
   description = "List of Commands to send to EC2 host via SSM in order to update credentials use; assumes /usr/local/bin/rotate_smtp.sh is present that reads from env var ; command list should never include secret value"
   type        = list(string)
-  default     = ["f'export SecretID=\"{secret_arn}\"'","/usr/local/bin/rotate_smtp.sh $SecretID"]
+  default     = ["f'export SecretID=\"{secret_arn}\"'", "/usr/local/bin/rotate_smtp.sh $SecretID"]
 }
 
 variable "ssm_rotate_on_ec2_instance_id" {
