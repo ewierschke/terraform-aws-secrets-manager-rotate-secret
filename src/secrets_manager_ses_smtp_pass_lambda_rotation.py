@@ -319,10 +319,10 @@ def set_secret(service_client, arn, token, ssm_document_name, ssm_commands_list_
                                               ssm_rotate_on_ec2_instance_id, arn)
 
         # Wait for invocations to appear for the command
-        _wait_for_ssm_invocations(ssm_client, command_id)
+        _wait_for_ssm_invocations(ssm_client, command_id, ssm_rotate_on_ec2_instance_id)
 
         # Check all complete successfully
-        _check_invocation_success(ssm_client, command_id)
+        _check_invocation_success(ssm_client, command_id, ssm_rotate_on_ec2_instance_id)
     else:
         log.info("setSecret: ssm_document_name or instance_id NOT provided, no SSM actions, continue...")
 
@@ -507,14 +507,14 @@ def _execute_ssm_run_command(ssm_client, document_name, ssm_commands_list, ec2_i
     return command_id
 
 
-def _wait_for_ssm_invocations(ssm_client, command_id):
+def _wait_for_ssm_invocations(ssm_client, command_id, instance_id):
     # list_command_invocations starts with returning 0 invocations and gradually adds them hence this logic
     invocations_found = False
     retry = 10
 
     while not invocations_found and retry > 0:
 
-        if len(ssm_client.list_command_invocations(CommandId=command_id)['CommandInvocations']) > 0:
+        if len(ssm_client.list_command_invocations(CommandId=command_id,InstanceId=instance_id)['CommandInvocations']) > 0:
             invocations_found = True
         else:
             time.sleep(0.5)
@@ -524,14 +524,14 @@ def _wait_for_ssm_invocations(ssm_client, command_id):
         raise RuntimeError("SSM Document was not invoked on any instances, check the instance id is set correctly")
 
 
-def _check_invocation_success(ssm_client, command_id):
+def _check_invocation_success(ssm_client, command_id, instance_id):
     # Check all invocations complete, raise an error for those not successful
     invocations_complete = False
     while not invocations_complete:
 
         complete_invocations = 0
 
-        command_invocation_status = ssm_client.list_command_invocations(CommandId=command_id)['CommandInvocations']
+        command_invocation_status = ssm_client.list_command_invocations(CommandId=command_id,InstanceId=instance_id)['CommandInvocations']
         for invocation in command_invocation_status:
 
             log.info("finishSecret: Status of SSM Run Command on instance %s is %s",
@@ -540,7 +540,7 @@ def _check_invocation_success(ssm_client, command_id):
                 complete_invocations += 1
 
             # List isn't complete at first execution, this catches it growing
-            total_invocations = len(ssm_client.list_command_invocations(CommandId=command_id)['CommandInvocations'])
+            total_invocations = len(ssm_client.list_command_invocations(CommandId=command_id,InstanceId=instance_id)['CommandInvocations'])
 
         if complete_invocations == total_invocations:
             invocations_complete = True
@@ -548,7 +548,7 @@ def _check_invocation_success(ssm_client, command_id):
             time.sleep(5)
 
     # Raise an error if any were not successful
-    command_invocation_status = ssm_client.list_command_invocations(CommandId=command_id)['CommandInvocations']
+    command_invocation_status = ssm_client.list_command_invocations(CommandId=command_id,InstanceId=instance_id)['CommandInvocations']
     invocation_errors = ""
     for invocation in command_invocation_status:
         if invocation['Status'] != 'Success':

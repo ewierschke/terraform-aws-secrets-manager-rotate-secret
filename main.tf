@@ -90,7 +90,8 @@ data "aws_iam_policy_document" "lambda" {
       sid = "AllowSSMSendCommand"
 
       actions = [
-        "ssm:SendCommand"
+        "ssm:SendCommand",
+        "ssm:ListCommandInvocations"
       ]
 
       resources = [
