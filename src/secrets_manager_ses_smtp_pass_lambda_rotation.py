@@ -90,7 +90,7 @@ TEST_STAGE_SENDER_EMAIL = os.environ.get("NOTIFICATION_SENDER_EMAIL")
 TEST_STAGE_RECIPIENT_EMAIL = os.environ.get("NOTIFICATION_RECIPIENT_EMAIL")
 SMTP_IAM_USERNAME = os.environ['SMTP_IAM_USERNAME']
 SSM_ROTATION_DOCUMENT_NAME = os.environ['SSM_ROTATION_DOCUMENT_NAME']
-SSM_COMMANDS_LIST = os.environ['SSM_COMMANDS_LIST']
+SSM_COMMANDS_LIST_PARAMETER_NAME = os.environ['SSM_COMMANDS_LIST_PARAMETER_NAME']
 SSM_ROTATE_ON_EC2_INSTANCE_ID = os.environ['SSM_ROTATE_ON_EC2_INSTANCE_ID']
 
 # These values are required to calculate the signature. Do not change them.
@@ -106,7 +106,7 @@ def lambda_handler(event, context):
     Secrets Manager Rotation
 
     AWS Secrets Manager rotation lambda of IAM user credentials used for SES SMTP sending
-    Expects Secret to be json key/value, prepopulated with username and user_arn keys
+    Expects Secret to be json key/value, prepopulated with username and iam_user_arn keys
 
     potential workflow--to allow rollback to known working IAM AKID--ties failed AWSPENDING secret to tobe Inactive AKID
     create_secret - checks for AKID count and status, if an inactive key is found delete first, 
@@ -161,7 +161,7 @@ def lambda_handler(event, context):
         create_secret(service_client, arn, token, REGION, SMTP_IAM_USERNAME)
     elif step == "setSecret":
         log.info("Executing Set Secret Function")
-        set_secret(service_client, arn, token, SSM_ROTATION_DOCUMENT_NAME, SSM_COMMANDS_LIST,
+        set_secret(service_client, arn, token, SSM_ROTATION_DOCUMENT_NAME, SSM_COMMANDS_LIST_PARAMETER_NAME,
                    SSM_ROTATE_ON_EC2_INSTANCE_ID)
     elif step == "testSecret":
         log.info("Executing Test Secret Function")
@@ -242,10 +242,10 @@ def create_secret(service_client, arn, token, region, smtp_iam_username):
 
         new_smtp_secret = _calculate_key(new_secret_key, region)
         #some secret dict structure validation, expects json w four keys;
-        #user_arn (must be pre-populated, updated to show which AKID belongs), username (must match
+        #iam_user_arn (must be pre-populated, updated to show which AKID belongs), username (must match
         # lambda func env var), AccessKeyId, SMTPPassword
         new_secret = _get_secret_dict(service_client, arn, "AWSCURRENT")
-        new_secret['user_arn'] = smtp_iam_user_arn
+        new_secret['iam_user_arn'] = smtp_iam_user_arn
         new_secret['AccessKeyId'] = new_access_key
         new_secret['SMTPPassword'] = new_smtp_secret
 
@@ -269,7 +269,7 @@ def create_secret(service_client, arn, token, region, smtp_iam_username):
 
 
 ##TODO-in tf, how would perms be granted to tagged instances?
-def set_secret(service_client, arn, token, ssm_document_name, ssm_commands_list, ssm_rotate_on_ec2_instance_id):
+def set_secret(service_client, arn, token, ssm_document_name, ssm_commands_list_parameter_name, ssm_rotate_on_ec2_instance_id):
     """
     Set the secret
 
@@ -294,8 +294,8 @@ def set_secret(service_client, arn, token, ssm_document_name, ssm_commands_list,
     _verify_user_name(pending_secret)
 
     # secret_string = pending_secret['SecretString']
-    secret_username = pending_secret['AccessKeyId']
-    secret_password = pending_secret['SMTPPassword']
+    # secret_username = pending_secret['AccessKeyId']
+    # secret_password = pending_secret['SMTPPassword']
 
     # If SSM Document name provided, and ec2 instance id
     # Execute the SSM command against the tagged servers with the new secret
@@ -307,9 +307,16 @@ def set_secret(service_client, arn, token, ssm_document_name, ssm_commands_list,
 
         ssm_client = boto3.client('ssm')
 
+        parameter_name = ssm_commands_list_parameter_name
+        ssm_response = ssm_client.get_parameter(Name=parameter_name, WithDecryption=False)
+        ssm_commands_list = ssm_response['Parameter']['Value']
+        log.info("setSecret: retrieved commands list from parameter: %s, list of commands are: %s",
+                 ssm_commands_list_parameter_name, ssm_commands_list)
+        #TODO-should add check to verify parameter came in as list
+        #TODO-should commands list be more prescriptive; ie only run predefined script name w secret arn as parameter
+
         command_id = _execute_ssm_run_command(ssm_client, ssm_document_name, ssm_commands_list,
-                                              ssm_rotate_on_ec2_instance_id, secret_username,
-                                              secret_password)
+                                              ssm_rotate_on_ec2_instance_id, arn)
 
         # Wait for invocations to appear for the command
         _wait_for_ssm_invocations(ssm_client, command_id)
@@ -446,14 +453,15 @@ def _calculate_key(secret_access_key, region):
     return smtp_password.decode('utf-8')
 
 
-def _execute_ssm_run_command(ssm_client, document_name, ssm_commands_list, ec2_instance_id, secret_username, secret_password):
+def _execute_ssm_run_command(ssm_client, document_name, ssm_commands_list, ec2_instance_id, secret_arn):
     # Execute the provided SSM document to update and restart the email server
 
-    #needs to be a list, but lambda module only takes string for env var
-    command_list = list(ssm_commands_list)
-    log.info("_execute_ssm_run_command: SSM Commands list to execute %s.", command_list)
+    #ssm_command_list needs to be a list, but lambda module only takes string for env var, maybe try to pull from parameter store
 
-    #TODO-need to append/replace generated secret_username and secret_password into appropriate ssm_commands_list
+    log.info("_execute_ssm_run_command: SSM Commands list to execute %s.", ssm_commands_list)
+    log.info("_execute_ssm_run_command: secret_arn for ec2 instance to query %s.", secret_arn)
+
+    #TODO-should not send secrets through ssm send_command, potentially be more prescriptive
 
     response = ssm_client.send_command(
         InstanceIds=[
@@ -462,11 +470,18 @@ def _execute_ssm_run_command(ssm_client, document_name, ssm_commands_list, ec2_i
         DocumentName=document_name,
         CloudWatchOutputConfig={
             'CloudWatchOutputEnabled': True
+            # 'CloudWatchLogGroupName':
         },
-        Comment="Update SMTP config after SES credential rotation",
+        Comment="Run /usr/local/bin/rotate_smtp.sh after SES credential rotation",
         Parameters={
-            "commands": command_list
+            "commands": ssm_commands_list
         },
+        # Parameters={
+        #     'commands': [
+        #         f'export SecretId="{secret_arn}"',
+        #         f'bash /usr/local/bin/rotate_smtp.sh $SecretId'
+        #     ]
+        # },
         TimeoutSeconds=60,
     )
     #   Targets=[
@@ -566,7 +581,7 @@ def _get_secret_dict(secrets_manager_service_client, secret_arn, stage, token=No
     Raises:
         ResourceNotFoundException: If the secret with the specified arn and stage does not exist
 
-        KeyError: If the secret has no user_arn
+        KeyError: If the secret has no iam_user_arn
     """
     # Only do VersionId validation against the stage if a token is passed in
     if token is None:
@@ -582,9 +597,9 @@ def _get_secret_dict(secrets_manager_service_client, secret_arn, stage, token=No
         raise ValueError(f"Invalid secret value json for secret {secret_arn}.") from exc
 
     # Validates if there is a user associated to the secret
-    if "user_arn" not in secret_dict:
-        log.error("createSecret: secret %s has no user_arn defined.", secret_arn)
-        raise KeyError(f"createSecret: secret {secret_arn} has no user_arn defined.")
+    if "iam_user_arn" not in secret_dict:
+        log.error("createSecret: secret %s has no iam_user_arn defined.", secret_arn)
+        raise KeyError(f"createSecret: secret {secret_arn} has no iam_user_arn defined.")
 
     return secret_dict
 
@@ -681,8 +696,8 @@ def _get_iam_user_arn(iam_service_client, username):
     """
     try:
         response = iam_service_client.get_user(UserName=username)
-        user_arn = response['User']['Arn']
-        return user_arn
+        iam_user_arn = response['User']['Arn']
+        return iam_user_arn
     except iam_service_client.exceptions.NoSuchEntityException:
         print(f"IAM user '{username}' not found.")
         return None

@@ -6,7 +6,7 @@ module "lambda" {
 
   function_name = "${var.project_name}-rotate-ses-smtp-pass-secret"
 
-  description = "Secrets Manager Rotate by Lambda SES SMTP password"
+  description = "Secrets Manager Rotate SES SMTP password ${var.project_name} by Lambda "
   handler     = "secrets_manager_ses_smtp_pass_lambda_rotation.lambda_handler"
   tags        = var.tags
 
@@ -45,8 +45,9 @@ module "lambda" {
     SECRETS_MANAGER_ENDPOINT     = var.secrets_manager_endpoint
     SMTP_IAM_USERNAME            = var.smtp_iam_username
     SSM_ROTATION_DOCUMENT_NAME   = var.ssm_rotation_document_name
-    SSM_COMMANDS_LIST            = jsonencode(var.ssm_commands_list)
-    SSM_ROTATE_ON_EC2_INSTANCE_ID = var.ssm_rotate_on_ec2_instance_id
+    # SSM_COMMANDS_LIST            = jsonencode(var.ssm_commands_list)
+    SSM_COMMANDS_LIST_PARAMETER_NAME = var.ssm_commands_list_parameter_name
+    SSM_ROTATE_ON_EC2_INSTANCE_ID    = var.ssm_rotate_on_ec2_instance_id
   }
 }
 
@@ -100,10 +101,24 @@ data "aws_iam_policy_document" "lambda" {
   }
 }
 
-resource "aws_lambda_permission" "events" {
+locals {
+  ssm_commands_list_parameter_name = var.ssm_commands_list_parameter_name != "" ? var.ssm_commands_list_parameter_name : "${var.project_name}_ssm_commands_list"
+}
+
+resource "aws_lambda_permission" "secretmanager" {
   action        = "lambda:InvokeFunction"
   function_name = module.lambda.lambda_function_name
   principal     = "secretsmanager.amazonaws.com"
+}
+
+resource "aws_ssm_parameter" "commands_list" {
+  count       = var.create_ssm_parameter ? 1 : 0
+  name        = local.ssm_commands_list_parameter_name
+  description = "List of commands to run against ec2 instance id to rotate the secret within the application"
+  type        = "StringList"
+  value       = join(",", var.ssm_commands_list)
+
+  tags = var.tags
 }
 
 ##############################
