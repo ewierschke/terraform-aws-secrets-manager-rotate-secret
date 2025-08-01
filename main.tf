@@ -104,7 +104,7 @@ data "aws_iam_policy_document" "lambda" {
     for_each = var.ssm_rotate_on_ec2_instance_id != "" ? [1] : []
 
     content {
-      sid = "AllowSSMSendCommand"
+      sid = "AllowSSMListCommandInvocations"
 
       actions = [
         "ssm:ListCommandInvocations"
