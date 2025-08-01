@@ -242,10 +242,10 @@ def create_secret(service_client, arn, token, region, smtp_iam_username):
             #still in use and should not be deleted; likely new AKID created but not rotated on app
             oldest_key_id = access_keys[0]['AccessKeyId']
             current_secret = _get_secret_dict(service_client, arn, "AWSCURRENT")
-            if current_secret['AccessKey']['AccessKeyId'] != oldest_key_id:
+            if current_secret['AccessKeyId'] != oldest_key_id:
                 iam_client.delete_access_key(UserName=smtp_iam_username, AccessKeyId=oldest_key_id)
                 log.info("Deleted oldest access key for %s: %s", smtp_iam_username, oldest_key_id)
-            elif current_secret['AccessKey']['AccessKeyId'] == oldest_key_id:
+            elif current_secret['AccessKeyId'] == oldest_key_id:
                 unused_key_id = access_keys[1]['AccessKeyId']
                 iam_client.delete_access_key(UserName=smtp_iam_username, AccessKeyId=unused_key_id)
                 log.info("Deleted access key not currently marked as AWSCURRENT in secret"
