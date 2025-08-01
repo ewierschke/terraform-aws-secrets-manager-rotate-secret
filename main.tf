@@ -4,7 +4,7 @@
 module "lambda" {
   source = "git::https://github.com/terraform-aws-modules/terraform-aws-lambda.git?ref=v7.20.1"
 
-  function_name = "${var.project_name}-rotate-secret-ses-smtp-password"
+  function_name = local.lambda_name
 
   description = "Secrets Manager Initiated Lambda rotation of SES SMTP password-${var.project_name}"
   handler     = "secrets_manager_ses_smtp_pass_lambda_rotation.lambda_handler"
@@ -122,6 +122,10 @@ data "aws_iam_policy_document" "lambda" {
   }
 }
 
+locals {
+  lambda_name = "${var.project_name}-rotate-secret-ses-smtp-password"
+}
+
 resource "aws_lambda_permission" "secretmanager" {
   action        = "lambda:InvokeFunction"
   function_name = module.lambda.lambda_function_name
@@ -129,7 +133,7 @@ resource "aws_lambda_permission" "secretmanager" {
 }
 
 resource "aws_sns_topic" "rotation_notifications" {
-  name = "${module.lambda.lambda_function_name}-notifications"
+  name = "${local.lambda_name}-notifications"
 }
 
 ##############################
