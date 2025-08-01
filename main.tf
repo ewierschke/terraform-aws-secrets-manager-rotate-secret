@@ -90,8 +90,7 @@ data "aws_iam_policy_document" "lambda" {
       sid = "AllowSSMSendCommand"
 
       actions = [
-        "ssm:SendCommand",
-        "ssm:ListCommandInvocations"
+        "ssm:SendCommand"
       ]
 
       resources = [
@@ -101,7 +100,29 @@ data "aws_iam_policy_document" "lambda" {
     }
   }
 
-    dynamic "statement" {
+  dynamic "statement" {
+    for_each = var.ssm_rotate_on_ec2_instance_id != "" ? [1] : []
+
+    content {
+      sid = "AllowSSMSendCommand"
+
+      actions = [
+        "ssm:ListCommandInvocations"
+      ]
+
+      resources = [
+        "*"
+      ]
+
+      condition {
+        test     = "StringEquals"
+        variable = "ssm:InstanceId"
+        values   = ["${var.ssm_rotate_on_ec2_instance_id}"]
+      }
+    }
+  }
+
+  dynamic "statement" {
     for_each = var.create_ssm_parameter != false ? [1] : []
 
     content {
@@ -112,7 +133,8 @@ data "aws_iam_policy_document" "lambda" {
       ]
 
       resources = [
-        "arn:${data.aws_partition.current.partition}:ssm:${data.aws_region.current.name}:${data.aws_caller_identity.current.account_id}:parameter${local.ssm_commands_list_parameter_name}"]
+        "arn:${data.aws_partition.current.partition}:ssm:${data.aws_region.current.name}:${data.aws_caller_identity.current.account_id}:parameter${local.ssm_commands_list_parameter_name}"
+      ]
     }
   }
 }

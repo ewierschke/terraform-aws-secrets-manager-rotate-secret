@@ -479,7 +479,7 @@ def _execute_ssm_run_command(ssm_client, document_name, ssm_commands_list, ec2_i
         Parameters={
             'commands': [
                 f'export SecretId="{secret_arn}"',
-                f'bash /usr/local/bin/rotate_smtp.sh $SecretId'
+                'bash /usr/local/bin/rotate_smtp.sh $SecretId'
             ]
         },
         TimeoutSeconds=60,
@@ -530,11 +530,11 @@ def _check_invocation_success(ssm_client, command_id, instance_id):
     while not invocations_complete:
 
         complete_invocations = 0
-
+        #too broad... should use get_command_invocation?  or how to limit perms
         command_invocation_status = ssm_client.list_command_invocations(CommandId=command_id,InstanceId=instance_id)['CommandInvocations']
         for invocation in command_invocation_status:
 
-            log.info("finishSecret: Status of SSM Run Command on instance %s is %s",
+            log.info("setSecret: Status of SSM Run Command on instance %s is %s",
                      invocation['InstanceId'], invocation['Status'])
             if invocation['Status'] != 'Pending' and invocation['Status'] != 'InProgress':
                 complete_invocations += 1
