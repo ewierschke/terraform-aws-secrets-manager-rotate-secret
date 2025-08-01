@@ -46,24 +46,19 @@ variable "tags" {
   default     = {}
 }
 
-variable "secrets_manager_endpoint" {
-  description = "Secrets Manager Endpoint to get/set secret"
-  type        = string
-}
-
 variable "ses_smtp_endpoint" {
   description = "SES SMTP Endpoint to test new smtp credentials against"
   type        = string
 }
 
 variable "notification_sender_email" {
-  description = "SES Verified identity/email address used in FROM field of notification email after rotation, if empty string function won't send notification of rotation"
+  description = "SES Verified identity/email address used in FROM field of notification email after rotation, if empty string function won't try to send notification of rotation"
   type        = string
   default     = ""
 }
 
 variable "notification_recipient_email" {
-  description = "Email address to send notification email to after rotation"
+  description = "Email address to send notification email to using new credentials, after rotation"
   type        = string
   default     = ""
 }
@@ -74,31 +69,13 @@ variable "smtp_iam_username" {
 }
 
 variable "ssm_rotation_document_name" {
-  description = "SSM Document name to use with Command List for updating credentials on EC2 instance id provided, if empty string function won't attempt ssm:SendCommand"
+  description = "SSM Document name (ie AWS-RunShellScript) to use with Command List for updating credentials on EC2 instance id provided"
   type        = string
-  default     = ""
-}
-
-variable "create_ssm_parameter" {
-  description = "Whether to create the SSM parameter of the list of commands or query existing"
-  type        = bool
-  default     = true
-}
-
-variable "ssm_commands_list_parameter_name" {
-  description = "Parameter name within SSM parameter store as a StringList with the list of SSM commands"
-  type        = string
-  default     = ""
-}
-
-variable "ssm_commands_list" {
-  description = "List of Commands to send to EC2 host via SSM in order to update credentials use; assumes /usr/local/bin/rotate_smtp.sh is present that reads from env var ; command list should never include secret value"
-  type        = list(string)
-  default     = ["f'export SecretID=\"{secret_arn}\"'", "/usr/local/bin/rotate_smtp.sh $SecretID"]
+  default     = "AWS-RunShellScript"
 }
 
 variable "ssm_rotate_on_ec2_instance_id" {
-  description = "EC2 instance ID on which to execute SSM commands to rotate secret being used, if empty string function won't attempt ssm:SendCommand"
+  description = "EC2 instance ID (ie i-xxxxxxxxxxxxxxxxx) on which to execute SSM commands to rotate secret being used, if empty string provided, function won't attempt ssm:SendCommand"
   type        = string
   default     = ""
 }

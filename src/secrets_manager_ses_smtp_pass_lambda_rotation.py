@@ -90,7 +90,6 @@ TEST_STAGE_SENDER_EMAIL = os.environ.get("NOTIFICATION_SENDER_EMAIL")
 TEST_STAGE_RECIPIENT_EMAIL = os.environ.get("NOTIFICATION_RECIPIENT_EMAIL")
 SMTP_IAM_USERNAME = os.environ['SMTP_IAM_USERNAME']
 SSM_ROTATION_DOCUMENT_NAME = os.environ['SSM_ROTATION_DOCUMENT_NAME']
-SSM_COMMANDS_LIST_PARAMETER_NAME = os.environ['SSM_COMMANDS_LIST_PARAMETER_NAME']
 SSM_ROTATE_ON_EC2_INSTANCE_ID = os.environ['SSM_ROTATE_ON_EC2_INSTANCE_ID']
 
 # These values are required to calculate the signature. Do not change them.
@@ -161,8 +160,7 @@ def lambda_handler(event, context):
         create_secret(service_client, arn, token, REGION, SMTP_IAM_USERNAME)
     elif step == "setSecret":
         log.info("Executing Set Secret Function")
-        set_secret(service_client, arn, token, SSM_ROTATION_DOCUMENT_NAME, SSM_COMMANDS_LIST_PARAMETER_NAME,
-                   SSM_ROTATE_ON_EC2_INSTANCE_ID)
+        set_secret(service_client, arn, token, SSM_ROTATION_DOCUMENT_NAME, SSM_ROTATE_ON_EC2_INSTANCE_ID)
     elif step == "testSecret":
         log.info("Executing Test Secret Function")
         #TODO - decide about adding more params... need to provide option to send email or just continue
@@ -215,10 +213,11 @@ def create_secret(service_client, arn, token, region, smtp_iam_username):
         keys_response = iam_client.list_access_keys(UserName=smtp_iam_username)
         access_keys = sorted(keys_response['AccessKeyMetadata'], key=lambda x: x['CreateDate'])
 
-        #IAM user can have 2 keys, delete any inactive then if still 2 delete the oldest before
-        # creating a new one
-        #TODO-if set_secret or test_secret fails, those functions set the newest AKID to inactive
-        # so that original still works until new is successfully set/tested in instance id
+        #IAM user can have 2 keys, delete any inactive then if still 2, verify AWSCURRENT is not to
+        # be deleted (if AWSCURRENT is to be deleted, del other), then delete the oldest before creating a new one
+        #TODO-need to ensure we're not deleting working key to make sure for new... make sure
+        # original still works until new is successfully set/tested in instance id
+        
         #first try to del inactive then if still 2 keys, del oldest
         if len(access_keys) >= 2:
             for access_key in access_keys:
@@ -268,8 +267,7 @@ def create_secret(service_client, arn, token, region, smtp_iam_username):
         log.info("createSecret: Successfully put secret for ARN %s and version %s.", arn, token)
 
 
-##TODO-in tf, how would perms be granted to tagged instances?
-def set_secret(service_client, arn, token, ssm_document_name, ssm_commands_list_parameter_name, ssm_rotate_on_ec2_instance_id):
+def set_secret(service_client, arn, token, ssm_document_name, ssm_rotate_on_ec2_instance_id):
     """
     Set the secret
 
@@ -300,22 +298,16 @@ def set_secret(service_client, arn, token, ssm_document_name, ssm_commands_list_
     # If SSM Document name provided, and ec2 instance id
     # Execute the SSM command against the tagged servers with the new secret
     #TODO-test w commands
-    if not ssm_document_name == "" and not ssm_rotate_on_ec2_instance_id == "":
+    if not ssm_rotate_on_ec2_instance_id == "":
         log.info("setSecret: ssm_document_name provided: %s, " \
         "attempting SSM Run Command against ec2 instance: %s", ssm_document_name, 
         ssm_rotate_on_ec2_instance_id)
 
         ssm_client = boto3.client('ssm')
 
-        parameter_name = ssm_commands_list_parameter_name
-        ssm_response = ssm_client.get_parameter(Name=parameter_name, WithDecryption=False)
-        ssm_commands_list = ssm_response['Parameter']['Value']
-        log.info("setSecret: retrieved commands list from parameter: %s, list of commands are: %s",
-                 ssm_commands_list_parameter_name, ssm_commands_list)
-        #TODO-should add check to verify parameter came in as list
-        #TODO-should commands list be more prescriptive; ie only run predefined script name w secret arn as parameter
+        #TODO-verify more prescriptive; ie only run predefined script name w secret arn as parameter
 
-        command_id = _execute_ssm_run_command(ssm_client, ssm_document_name, ssm_commands_list,
+        command_id = _execute_ssm_run_command(ssm_client, ssm_document_name,
                                               ssm_rotate_on_ec2_instance_id, arn)
 
         # Wait for invocations to appear for the command
@@ -453,15 +445,12 @@ def _calculate_key(secret_access_key, region):
     return smtp_password.decode('utf-8')
 
 
-def _execute_ssm_run_command(ssm_client, document_name, ssm_commands_list, ec2_instance_id, secret_arn):
+def _execute_ssm_run_command(ssm_client, document_name, ec2_instance_id, secret_arn):
     # Execute the provided SSM document to update and restart the email server
 
-    #ssm_command_list needs to be a list, but lambda module only takes string for env var, maybe try to pull from parameter store
-
-    log.info("_execute_ssm_run_command: SSM Commands list to execute %s.", ssm_commands_list)
     log.info("_execute_ssm_run_command: secret_arn for ec2 instance to query %s.", secret_arn)
 
-    #TODO-should not send secrets through ssm send_command, potentially be more prescriptive
+    #TODO-should not send secrets through ssm send_command, verify more prescriptive
 
     response = ssm_client.send_command(
         InstanceIds=[
@@ -473,9 +462,6 @@ def _execute_ssm_run_command(ssm_client, document_name, ssm_commands_list, ec2_i
             # 'CloudWatchLogGroupName':
         },
         Comment="Run /usr/local/bin/rotate_smtp.sh after SES credential rotation",
-        # Parameters={
-        #     "commands": ssm_commands_list
-        # },
         Parameters={
             'commands': [
                 f'export SecretId="{secret_arn}"',
