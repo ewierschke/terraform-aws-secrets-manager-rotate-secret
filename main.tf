@@ -45,6 +45,7 @@ module "lambda" {
     SMTP_IAM_USERNAME             = var.smtp_iam_username
     SSM_ROTATION_DOCUMENT_NAME    = var.ssm_rotation_document_name
     SSM_ROTATE_ON_EC2_INSTANCE_ID = var.ssm_rotate_on_ec2_instance_id
+    SNS_TOPIC_ARN = aws_sns_topic.rotation_notifications.arn
   }
 }
 
@@ -125,6 +126,10 @@ resource "aws_lambda_permission" "secretmanager" {
   action        = "lambda:InvokeFunction"
   function_name = module.lambda.lambda_function_name
   principal     = "secretsmanager.amazonaws.com"
+}
+
+resource "aws_sns_topic" "rotation_notifications" {
+  name = "module.lambda.lambda_function_name"
 }
 
 ##############################

@@ -22,6 +22,7 @@ import time
 
 import boto3
 import botocore
+from botocore.exceptions import ClientError
 
 # logger = logging.getLogger()
 # # Get the log level from the environment variable and default to INFO if not set
@@ -91,6 +92,7 @@ TEST_STAGE_RECIPIENT_EMAIL = os.environ.get("NOTIFICATION_RECIPIENT_EMAIL")
 SMTP_IAM_USERNAME = os.environ['SMTP_IAM_USERNAME']
 SSM_ROTATION_DOCUMENT_NAME = os.environ['SSM_ROTATION_DOCUMENT_NAME']
 SSM_ROTATE_ON_EC2_INSTANCE_ID = os.environ['SSM_ROTATE_ON_EC2_INSTANCE_ID']
+SNS_TOPIC_ARN = os.environ['SNS_TOPIC_ARN']
 
 # These values are required to calculate the signature. Do not change them.
 DATE = "11111111"
@@ -107,10 +109,12 @@ def lambda_handler(event, context):
     AWS Secrets Manager rotation lambda of IAM user credentials used for SES SMTP sending
     Expects Secret to be json key/value, prepopulated with username and iam_user_arn keys
 
-    potential workflow--to allow rollback to known working IAM AKID--ties failed AWSPENDING secret to tobe Inactive AKID
+    potential workflow--to allow rollback to known working IAM AKID--ties failed AWSPENDING secret 
+      to an AKID to be marked inactive before raising errors?
     create_secret - checks for AKID count and status, if an inactive key is found delete first, 
       if still 2 keys found, delete oldest, mark new secret as pending
-    set_secret - runs SSM commands to set pending secret in ec2 instance id, if fails, mark new AKID as Inactive (to allow AWSCURRENT secret to function)
+    set_secret - runs SSM commands to set pending secret in ec2 instance id, if fails, mark new AKID
+      as Inactive (to allow AWSCURRENT secret to continue functioning)
     test_secret - send an email w new credential, if fails mark new AKID as Inactive
     finish_secret - changes secret label of AWSPENDING to AWSCURRENT, leaves both AKIDs active (tbd)
 
@@ -160,10 +164,12 @@ def lambda_handler(event, context):
         create_secret(service_client, arn, token, REGION, SMTP_IAM_USERNAME)
     elif step == "setSecret":
         log.info("Executing Set Secret Function")
-        set_secret(service_client, arn, token, SSM_ROTATION_DOCUMENT_NAME, SSM_ROTATE_ON_EC2_INSTANCE_ID)
+        set_secret(service_client, arn, token, SSM_ROTATION_DOCUMENT_NAME,
+                   SSM_ROTATE_ON_EC2_INSTANCE_ID)
     elif step == "testSecret":
         log.info("Executing Test Secret Function")
-        #TODO - decide about adding more params... need to provide option to send email or just continue
+        #TODO - decide about adding more params... need to provide option to send email or just
+        #  continue
         test_secret(service_client, arn, token, TEST_STAGE_SES_SMTP_ENDPOINT)
     elif step == "finishSecret":
         log.info("Executing Finish Secret Function")
@@ -214,24 +220,36 @@ def create_secret(service_client, arn, token, region, smtp_iam_username):
         access_keys = sorted(keys_response['AccessKeyMetadata'], key=lambda x: x['CreateDate'])
 
         #IAM user can have 2 keys, delete any inactive then if still 2, verify AWSCURRENT is not to
-        # be deleted (if AWSCURRENT is to be deleted, del other), then delete the oldest before creating a new one
+        # be deleted (if AWSCURRENT is to be deleted, del other), then delete the oldest before
+        #  creating a new one
         #TODO-need to ensure we're not deleting working key to make sure for new... make sure
         # original still works until new is successfully set/tested in instance id
-        
+
         #first try to del inactive then if still 2 keys, del oldest
         if len(access_keys) >= 2:
             for access_key in access_keys:
                 if access_key['Status'] == 'Inactive':
-                    iam_client.delete_access_key(UserName=smtp_iam_username, AccessKeyId=access_key['AccessKeyId'])
-                    log.info("Deleted Inactive access key for %s: %s", smtp_iam_username, access_key['AccessKeyId'])
+                    iam_client.delete_access_key(UserName=smtp_iam_username,
+                                                 AccessKeyId=access_key['AccessKeyId'])
+                    log.info("Deleted Inactive access key for %s: %s", smtp_iam_username,
+                             access_key['AccessKeyId'])
 
-        #check again for current access keys
-        keys_response = iam_client.list_access_keys(UserName=smtp_iam_username)
-        access_keys = sorted(keys_response['AccessKeyMetadata'], key=lambda x: x['CreateDate'])
+        #check again for 2 access keys
+        iam_keys_response = iam_client.list_access_keys(UserName=smtp_iam_username)
+        access_keys = sorted(iam_keys_response['AccessKeyMetadata'], key=lambda x: x['CreateDate'])
         if len(access_keys) >= 2:
+            #compare the oldest key id to the key stored in AWSCURRENT, if they match AWSCURRENT is
+            #still in use and should not be deleted; likely new AKID created but not rotated on app
             oldest_key_id = access_keys[0]['AccessKeyId']
-            iam_client.delete_access_key(UserName=smtp_iam_username, AccessKeyId=oldest_key_id)
-            log.info("Deleted oldest access key for %s: %s", smtp_iam_username, oldest_key_id)
+            current_secret = _get_secret_dict(service_client, arn, "AWSCURRENT")
+            if current_secret['AccessKey']['AccessKeyId'] != oldest_key_id:
+                iam_client.delete_access_key(UserName=smtp_iam_username, AccessKeyId=oldest_key_id)
+                log.info("Deleted oldest access key for %s: %s", smtp_iam_username, oldest_key_id)
+            elif current_secret['AccessKey']['AccessKeyId'] == oldest_key_id:
+                unused_key_id = access_keys[1]['AccessKeyId']
+                iam_client.delete_access_key(UserName=smtp_iam_username, AccessKeyId=unused_key_id)
+                log.info("Deleted access key not currently marked as AWSCURRENT in secret"
+                " for %s: %s", smtp_iam_username, unused_key_id)
 
         new_key = iam_client.create_access_key(
             UserName=smtp_iam_username
@@ -241,8 +259,9 @@ def create_secret(service_client, arn, token, region, smtp_iam_username):
 
         new_smtp_secret = _calculate_key(new_secret_key, region)
         #some secret dict structure validation, expects json w four keys;
-        #iam_user_arn (must be pre-populated, updated to show which AKID belongs), username (must match
-        # lambda func env var), AccessKeyId, SMTPPassword
+        #iam_user_arn (key must be pre-populated, func updates value to show which user the
+        # generated AKID belongs to), username (value must match lambda func env var),
+        # AccessKeyId, SMTPPassword
         new_secret = _get_secret_dict(service_client, arn, "AWSCURRENT")
         new_secret['iam_user_arn'] = smtp_iam_user_arn
         new_secret['AccessKeyId'] = new_access_key
@@ -251,7 +270,8 @@ def create_secret(service_client, arn, token, region, smtp_iam_username):
         # Put the secret
         try:
             service_client.put_secret_value(SecretId=arn, ClientRequestToken=token,
-                                            SecretString=json.dumps(new_secret), VersionStages=['AWSPENDING'])
+                                            SecretString=json.dumps(new_secret),
+                                            VersionStages=['AWSPENDING'])
         except botocore.exceptions.ClientError as error:
             log.error(error)
             #TODO-maybe this should just mark inactive, and next go-round would check for inactive
@@ -316,7 +336,8 @@ def set_secret(service_client, arn, token, ssm_document_name, ssm_rotate_on_ec2_
         # Check all complete successfully
         _check_invocation_success(ssm_client, command_id, ssm_rotate_on_ec2_instance_id)
     else:
-        log.info("setSecret: ssm_document_name or instance_id NOT provided, no SSM actions, continue...")
+        log.info("setSecret: ssm_document_name or instance_id NOT provided, no SSM actions," \
+        "continue...")
 
     log.info("setSecret: Successfully set secret for %s against %s.", arn,
               ssm_rotate_on_ec2_instance_id)
@@ -340,7 +361,8 @@ def test_secret(service_client, arn, token, ses_smtp_endpoint):
     """
     # This is where the secret should be tested against the service
     # Get the pending secret
-    # pending_secret = service_client.get_secret_value(SecretId=arn, VersionId=token, VersionStage="AWSPENDING")['SecretString']
+    # pending_secret = service_client.get_secret_value(SecretId=arn, VersionId=token,
+    #  VersionStage="AWSPENDING")['SecretString']
     pending_secret = _get_secret_dict(service_client, arn, "AWSPENDING", token)
 
     # Verify if the username stored in environment variable is the same with the one stored
@@ -388,6 +410,18 @@ def test_secret(service_client, arn, token, ses_smtp_endpoint):
            TEST_STAGE_EMAIL_BODY_TEXT, TEST_STAGE_EMAIL_BODY_HTML
         )
     else:
+        mobile_key = "mobile"
+        friendly = "friendly"
+        not_friendly = "not-friendly"
+        log.info(f"Publishing a message with a {mobile_key}: {not_friendly} attribute.")
+        sns_wrapper = SnsWrapper(boto3.resource("sns"))
+        topic_arn = SNS_TOPIC_ARN
+        sns_wrapper.publish_message(
+            topic_arn,
+            "Hey. This message is not mobile friendly, so you shouldn't get "
+            "it on your phone.",
+            {mobile_key: not_friendly},
+        )
         log.info("testSecret: TEST_STAGE_SENDER_EMAIL NOT provided, continue...")
 
 
@@ -395,7 +429,8 @@ def finish_secret(service_client, arn, token):
     """
     Finish the secret
 
-    This method finalizes the rotation process by marking the secret version passed in as the AWSCURRENT secret.
+    This method finalizes the rotation process by marking the secret version passed in as the
+     AWSCURRENT secret.
 
     Args:
         service_client (client): The secrets manager service client
@@ -414,15 +449,18 @@ def finish_secret(service_client, arn, token):
         if "AWSCURRENT" in metadata["VersionIdsToStages"][version]:
             if version == token:
                 # The correct version is already marked as current, return
-                log.info("finishSecret: Version %s already marked as AWSCURRENT for %s", version, arn)
+                log.info("finishSecret: Version %s already marked as AWSCURRENT for %s", version,
+                         arn)
                 return
             current_version = version
             break
 
     # Finalize by staging the secret version current
     service_client.update_secret_version_stage(SecretId=arn, VersionStage="AWSCURRENT",
-                                               MoveToVersionId=token, RemoveFromVersionId=current_version)
-    log.info("finishSecret: Successfully set AWSCURRENT stage to version %s for secret %s.", token, arn)
+                                               MoveToVersionId=token,
+                                                RemoveFromVersionId=current_version)
+    log.info("finishSecret: Successfully set AWSCURRENT stage to version %s for secret %s.", token,
+             arn)
 
 
 def _sign(key, msg):
@@ -494,20 +532,23 @@ def _execute_ssm_run_command(ssm_client, document_name, ec2_instance_id, secret_
 
 
 def _wait_for_ssm_invocations(ssm_client, command_id, instance_id):
-    # list_command_invocations starts with returning 0 invocations and gradually adds them hence this logic
+    # list_command_invocations starts with returning 0 invocations and gradually adds them hence
+    # this logic
     invocations_found = False
     retry = 10
 
     while not invocations_found and retry > 0:
 
-        if len(ssm_client.list_command_invocations(CommandId=command_id,InstanceId=instance_id)['CommandInvocations']) > 0:
+        if len(ssm_client.list_command_invocations(
+            CommandId=command_id,InstanceId=instance_id)['CommandInvocations']) > 0:
             invocations_found = True
         else:
             time.sleep(0.5)
             retry -= 1
 
     if not invocations_found:
-        raise RuntimeError("SSM Document was not invoked on any instances, check the instance id is set correctly")
+        raise RuntimeError("SSM Document was not invoked on any instances, check the instance id"
+        " is set correctly")
 
 
 def _check_invocation_success(ssm_client, command_id, instance_id):
@@ -517,7 +558,8 @@ def _check_invocation_success(ssm_client, command_id, instance_id):
 
         complete_invocations = 0
         #too broad... should use get_command_invocation?  or how to limit perms
-        command_invocation_status = ssm_client.list_command_invocations(CommandId=command_id,InstanceId=instance_id)['CommandInvocations']
+        command_invocation_status = ssm_client.list_command_invocations(
+            CommandId=command_id,InstanceId=instance_id)['CommandInvocations']
         for invocation in command_invocation_status:
 
             log.info("setSecret: Status of SSM Run Command on instance %s is %s",
@@ -526,7 +568,8 @@ def _check_invocation_success(ssm_client, command_id, instance_id):
                 complete_invocations += 1
 
             # List isn't complete at first execution, this catches it growing
-            total_invocations = len(ssm_client.list_command_invocations(CommandId=command_id,InstanceId=instance_id)['CommandInvocations'])
+            total_invocations = len(ssm_client.list_command_invocations(
+                CommandId=command_id,InstanceId=instance_id)['CommandInvocations'])
 
         if complete_invocations == total_invocations:
             invocations_complete = True
@@ -534,7 +577,8 @@ def _check_invocation_success(ssm_client, command_id, instance_id):
             time.sleep(5)
 
     # Raise an error if any were not successful
-    command_invocation_status = ssm_client.list_command_invocations(CommandId=command_id,InstanceId=instance_id)['CommandInvocations']
+    command_invocation_status = ssm_client.list_command_invocations(
+        CommandId=command_id,InstanceId=instance_id)['CommandInvocations']
     invocation_errors = ""
     for invocation in command_invocation_status:
         if invocation['Status'] != 'Success':
@@ -571,9 +615,12 @@ def _get_secret_dict(secrets_manager_service_client, secret_arn, stage, token=No
     """
     # Only do VersionId validation against the stage if a token is passed in
     if token is None:
-        secret = secrets_manager_service_client.get_secret_value(SecretId=secret_arn, VersionStage=stage)
+        secret = secrets_manager_service_client.get_secret_value(SecretId=secret_arn,
+                                                                VersionStage=stage)
     else:
-        secret = secrets_manager_service_client.get_secret_value(SecretId=secret_arn, VersionId=token, VersionStage=stage)
+        secret = secrets_manager_service_client.get_secret_value(SecretId=secret_arn,
+                                                                VersionId=token,
+                                                                VersionStage=stage)
     plaintext = secret['SecretString']
     try:
         secret_dict = json.loads(plaintext)
@@ -605,7 +652,8 @@ def _verify_user_name(secret):
     env_iam_smtp_user_name = os.environ['SMTP_IAM_USERNAME']
     secret_user_name = secret["username"]
     if env_iam_smtp_user_name != secret_user_name:
-        log.error("User %s is not allowed to use this Lambda function for rotation", secret_user_name)
+        log.error("User %s is not allowed to use this Lambda function for rotation",
+                  secret_user_name)
         raise ValueError(f"User {secret_user_name} is not allowed to use this Lambda function for rotation")
 
 
@@ -622,7 +670,8 @@ def _send_ses_email(smtp_host, smtp_port, smtp_username, smtp_password,
         
         smtp_username (str): Your Amazon SES SMTP username (Access Key ID).
         
-        smtp_password (str): Your Amazon SES SMTP password (Secret Access Key converted to an SMTP password).
+        smtp_password (str): Your Amazon SES SMTP password (Secret Access Key converted to an SMTP
+          password).
         
         sender_email (str): The verified sender email address in Amazon SES.
         
@@ -690,3 +739,47 @@ def _get_iam_user_arn(iam_service_client, username):
     except Exception as e: # pylint: disable=broad-exception-caught
         print(f"An error occurred: {e}")
         return None
+
+
+class SnsWrapper:
+    """Encapsulates Amazon SNS topic and subscription functions."""
+
+    def __init__(self, sns_resource):
+        """
+        :param sns_resource: A Boto3 Amazon SNS resource.
+        """
+        self.sns_resource = sns_resource
+
+
+    @staticmethod
+    def publish_message(topic, message, attributes):
+        """
+        Publishes a message, with attributes, to a topic. Subscriptions can be filtered
+        based on message attributes so that a subscription receives messages only
+        when specified attributes are present.
+
+        :param topic: The topic to publish to.
+        :param message: The message to publish.
+        :param attributes: The key-value attributes to attach to the message. Values
+                           must be either `str` or `bytes`.
+        :return: The ID of the message.
+        """
+        try:
+            att_dict = {}
+            for key, value in attributes.items():
+                if isinstance(value, str):
+                    att_dict[key] = {"DataType": "String", "StringValue": value}
+                elif isinstance(value, bytes):
+                    att_dict[key] = {"DataType": "Binary", "BinaryValue": value}
+            response = topic.publish(Message=message, MessageAttributes=att_dict)
+            message_id = response["MessageId"]
+            log.info(
+                "Published message with attributes %s to topic %s.",
+                attributes,
+                topic.arn,
+            )
+        except ClientError:
+            log.exception("Couldn't publish message to topic %s.", topic.arn)
+            raise
+        else:
+            return message_id

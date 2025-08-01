@@ -11,8 +11,10 @@ prior to rotation:
     "iam_user_arn": "<to be populated by function>", 
     "AccessKeyId": "<to be populated by function>", 
     "SMTPPassword": "<to be popualted by function>", 
-    "username": "<populate with iam username to be rotated>"
+    "username": "<must be pre-populated with iam username matching module variable smtp_iam_username to be rotated>"
 }
+
+Function environment variables are populated based on variable values in this module.
 
 The function follows structure from the Secrets Manager Rotation template and expects four steps.
 The function expects the target EC2 instance to be reachable via SSM for run_command execution, and 
