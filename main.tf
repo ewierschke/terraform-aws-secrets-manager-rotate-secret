@@ -129,7 +129,7 @@ resource "aws_lambda_permission" "secretmanager" {
 }
 
 resource "aws_sns_topic" "rotation_notifications" {
-  name = "module.lambda.lambda_function_name"
+  name = "${module.lambda.lambda_function_name}-notifications"
 }
 
 ##############################
