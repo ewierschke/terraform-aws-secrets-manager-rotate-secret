@@ -45,7 +45,7 @@ module "lambda" {
     SMTP_IAM_USERNAME             = var.smtp_iam_username
     SSM_ROTATION_DOCUMENT_NAME    = var.ssm_rotation_document_name
     SSM_ROTATE_ON_EC2_INSTANCE_ID = var.ssm_rotate_on_ec2_instance_id
-    SNS_TOPIC_ARN = aws_sns_topic.rotation_notifications.arn
+    SNS_TOPIC_ARN                 = aws_sns_topic.rotation_notifications.arn
   }
 }
 
@@ -78,6 +78,18 @@ data "aws_iam_policy_document" "lambda" {
 
     resources = [
       "arn:${data.aws_partition.current.partition}:iam::*:user/${var.smtp_iam_username}"
+    ]
+  }
+
+  statement {
+    sid = "AllowSNSPublish"
+
+    actions = [
+      "sns:Publish"
+    ]
+
+    resources = [
+      "${aws_sns_topic.aws_sns_topic.rotation_notifications.arn}"
     ]
   }
 
