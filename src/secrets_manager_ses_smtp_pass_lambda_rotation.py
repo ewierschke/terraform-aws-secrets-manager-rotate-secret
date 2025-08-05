@@ -218,7 +218,7 @@ def create_secret(service_client, arn, token, region, smtp_iam_username):
     log.info("createSecret:Publishing message to topic arn %s.", SNS_TOPIC_ARN)
     sns_client = boto3_client('sns')
     topic_arn = SNS_TOPIC_ARN
-    message_content = ("createSecret:Starting rotation of secret_arn: %s.", arn)
+    message_content = str("createSecret:Starting rotation of secret_arn: %s.", arn)
     try:
         response = sns_client.publish(
             TopicArn=topic_arn,
@@ -456,7 +456,8 @@ def test_secret(service_client, arn, token, ses_smtp_endpoint):
         #     "it on your phone.",
         #     {mobile_key: not_friendly},
         # )
-        message_content = ("This message from the test stage of secret rotation for secret arn: %s.", arn)
+        message_content = str("This message from the test stage of secret rotation for secret " \
+        "arn: %s.", arn)
         try:
             response = sns_client.publish(
                 TopicArn=topic_arn,
@@ -515,7 +516,7 @@ def finish_secret(service_client, arn, token):
     log.info("finishSecret:Publishing message to topic arn %s.", SNS_TOPIC_ARN)
     sns_client = boto3_client('sns')
     topic_arn = SNS_TOPIC_ARN
-    message_content = ("finishSecret:Successfully rotated secret_arn: %s.", arn)
+    message_content = str("finishSecret:Successfully rotated secret_arn: %s.", arn)
     try:
         response = sns_client.publish(
             TopicArn=topic_arn,
