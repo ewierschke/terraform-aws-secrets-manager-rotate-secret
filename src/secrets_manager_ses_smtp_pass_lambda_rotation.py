@@ -20,7 +20,7 @@ import os
 from smtplib import SMTP, SMTP_SSL, SMTPAuthenticationError
 from time import sleep
 
-from boto3 import client as boto3_client, resource as boto3_resource
+from boto3 import client as boto3_client
 import botocore
 from botocore.exceptions import ClientError
 
@@ -214,6 +214,20 @@ def create_secret(service_client, arn, token, region, smtp_iam_username):
     # in current_secret
     _verify_user_name(current_secret)
 
+    #send notification to SNS topic
+    log.info("createSecret:Publishing message to topic arn %s.", SNS_TOPIC_ARN)
+    sns_client = boto3_client('sns')
+    topic_arn = SNS_TOPIC_ARN
+    message_content = ("createSecret:Starting rotation of secret_arn: %s.", arn)
+    try:
+        response = sns_client.publish(
+            TopicArn=topic_arn,
+            Message=message_content,
+        )
+        log.info("createSecret:Message published successfully with response: %s", response)
+    except Exception as e:
+        print(f"Error publishing message: {e}")
+
     # Now try to get the secret version, if that fails, put a new secret
     try:
         service_client.get_secret_value(SecretId=arn, VersionId=token, VersionStage="AWSPENDING")
@@ -351,7 +365,7 @@ def set_secret(service_client, arn, token, ssm_document_name, ssm_rotate_on_ec2_
             # Check all complete successfully
             _check_invocation_success(ssm_client, command_id, ssm_rotate_on_ec2_instance_id)
         except (ClientError, RuntimeError) as e:
-            log.error("Failed to execute SSM operations: %s", e)
+            log.error("setSecret:Failed to execute SSM operations: %s", e)
             raise RuntimeError(f"Unable to set secret via SSM on instance {ssm_rotate_on_ec2_instance_id}: {e}") from e
     else:
         log.info("setSecret: ssm_document_name or instance_id NOT provided, no SSM actions," \
@@ -406,11 +420,11 @@ def test_secret(service_client, arn, token, ses_smtp_endpoint):
                 smtp_login = smtp_client.login(secret_username, secret_password)
             except SMTPAuthenticationError as e:
                 #guessing at error being raised to satisfy linter-revisit
-                log.info("error: %s: login unsuccessful: %s", e, login_retry)
+                log.info("testSecret:retry-error: %s: login unsuccessful: %s", e, login_retry)
                 sleep(1)
                 login_retry -= 1
             except Exception as e:  # pylint: disable=broad-exception-caught
-                log.info("error: %s: login unsuccessful: %s", e, login_retry)
+                log.info("testSecret:retry-error: %s: login unsuccessful: %s", e, login_retry)
                 sleep(1)
                 login_retry -= 1
             else:
@@ -428,19 +442,37 @@ def test_secret(service_client, arn, token, ses_smtp_endpoint):
            TEST_STAGE_EMAIL_BODY_TEXT, TEST_STAGE_EMAIL_BODY_HTML
         )
     else:
-        mobile_key = "mobile"
+        # mobile_key = "mobile"
         # friendly = "friendly"
-        not_friendly = "not-friendly"
-        log.info("Publishing a message with a %s: %s attribute.", mobile_key, not_friendly)
-        sns_wrapper = SnsWrapper(boto3_resource("sns"))
+        # not_friendly = "not-friendly"
+        # log.info("Publishing a message with a %s: %s attribute.", mobile_key, not_friendly)
+        # sns_wrapper = SnsWrapper(boto3_resource("sns"))
+        log.info("testSecret:Publishing message to topic arn %s.", SNS_TOPIC_ARN)
+        sns_client = boto3_client('sns')
         topic_arn = SNS_TOPIC_ARN
-        sns_wrapper.publish_message(
-            topic_arn,
-            "Hey. This message is not mobile friendly, so you shouldn't get "
-            "it on your phone.",
-            {mobile_key: not_friendly},
-        )
-        log.info("testSecret: TEST_STAGE_SENDER_EMAIL NOT provided, continue...")
+        # sns_wrapper.publish_message(
+        #     topic_arn,
+        #     "Hey. This message is not mobile friendly, so you shouldn't get "
+        #     "it on your phone.",
+        #     {mobile_key: not_friendly},
+        # )
+        message_content = ("This message from the test stage of secret rotation for secret arn: %s.", arn)
+        try:
+            response = sns_client.publish(
+                TopicArn=topic_arn,
+                Message=message_content,
+            )
+            log.info("testSecret:Message published successfully with response: %s", response)
+        except Exception as e:
+            print(f"Error publishing message: {e}")
+        # sns_wrapper.publish_message(
+        #     topic_arn,
+        #     "Hey. This message is not mobile friendly, so you shouldn't get "
+        #     "it on your phone.",
+        #     {mobile_key: not_friendly},
+        # )
+        log.info("testSecret: TEST_STAGE_SENDER_EMAIL NOT provided, no test email sent using SMTP" \
+        "credentials, continue...")
 
 
 def finish_secret(service_client, arn, token):
@@ -479,6 +511,19 @@ def finish_secret(service_client, arn, token):
                                                 RemoveFromVersionId=current_version)
     log.info("finishSecret: Successfully set AWSCURRENT stage to version %s for secret %s.", token,
              arn)
+    #send notification to SNS topic
+    log.info("finishSecret:Publishing message to topic arn %s.", SNS_TOPIC_ARN)
+    sns_client = boto3_client('sns')
+    topic_arn = SNS_TOPIC_ARN
+    message_content = ("finishSecret:Successfully rotated secret_arn: %s.", arn)
+    try:
+        response = sns_client.publish(
+            TopicArn=topic_arn,
+            Message=message_content,
+        )
+        log.info("finishSecret:Message published successfully with response: %s", response)
+    except Exception as e:
+        print(f"Error publishing message: {e}")
 
 
 def _sign(key, msg):
@@ -776,46 +821,46 @@ def _get_iam_user_arn(iam_service_client, username):
         return None
 
 
-#https://github.com/awsdocs/aws-doc-sdk-examples/blob/main/python/example_code/sns/sns_basics.py#L339
-class SnsWrapper:
-    """Encapsulates Amazon SNS topic and subscription functions."""
+# #https://github.com/awsdocs/aws-doc-sdk-examples/blob/main/python/example_code/sns/sns_basics.py#L339
+# class SnsWrapper:
+#     """Encapsulates Amazon SNS topic and subscription functions."""
 
-    def __init__(self, sns_resource):
-        """
-        :param sns_resource: A Boto3 Amazon SNS resource.
-        """
-        self.sns_resource = sns_resource
+#     def __init__(self, sns_resource):
+#         """
+#         :param sns_resource: A Boto3 Amazon SNS resource.
+#         """
+#         self.sns_resource = sns_resource
 
 
-    @staticmethod
-    def publish_message(topic, message, attributes):
-        """
-        Publishes a message, with attributes, to a topic. Subscriptions can be filtered
-        based on message attributes so that a subscription receives messages only
-        when specified attributes are present.
+#     @staticmethod
+#     def publish_message(topic, message, attributes):
+#         """
+#         Publishes a message, with attributes, to a topic. Subscriptions can be filtered
+#         based on message attributes so that a subscription receives messages only
+#         when specified attributes are present.
 
-        :param topic: The topic to publish to.
-        :param message: The message to publish.
-        :param attributes: The key-value attributes to attach to the message. Values
-                           must be either `str` or `bytes`.
-        :return: The ID of the message.
-        """
-        try:
-            att_dict = {}
-            for key, value in attributes.items():
-                if isinstance(value, str):
-                    att_dict[key] = {"DataType": "String", "StringValue": value}
-                elif isinstance(value, bytes):
-                    att_dict[key] = {"DataType": "Binary", "BinaryValue": value}
-            response = topic.publish(Message=message, MessageAttributes=att_dict)
-            message_id = response["MessageId"]
-            log.info(
-                "Published message with attributes %s to topic %s.",
-                attributes,
-                topic.arn,
-            )
-        except ClientError as e:
-            log.error("Failed to publish message to topic %s: %s", topic.arn, e)
-            raise RuntimeError(f"Unable to publish SNS message to topic {topic.arn}: {e}") from e
-        else:
-            return message_id
+#         :param topic: The topic to publish to.
+#         :param message: The message to publish.
+#         :param attributes: The key-value attributes to attach to the message. Values
+#                            must be either `str` or `bytes`.
+#         :return: The ID of the message.
+#         """
+#         try:
+#             att_dict = {}
+#             for key, value in attributes.items():
+#                 if isinstance(value, str):
+#                     att_dict[key] = {"DataType": "String", "StringValue": value}
+#                 elif isinstance(value, bytes):
+#                     att_dict[key] = {"DataType": "Binary", "BinaryValue": value}
+#             response = topic.publish(Message=message, MessageAttributes=att_dict)
+#             message_id = response["MessageId"]
+#             log.info(
+#                 "Published message with attributes %s to topic %s.",
+#                 attributes,
+#                 topic.arn,
+#             )
+#         except ClientError as e:
+#             log.error("Failed to publish message to topic %s: %s", topic.arn, e)
+#             raise RuntimeError(f"Unable to publish SNS message to topic {topic.arn}: {e}") from e
+#         else:
+#             return message_id
