@@ -12,15 +12,15 @@ import base64
 import collections
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
-import hmac
-import hashlib
+from hmac import new as hmac_new
+from hashlib import sha256
 import json
 import logging
 import os
-import smtplib
-import time
+from smtplib import SMTP, SMTP_SSL, SMTPAuthenticationError
+from time import sleep
 
-import boto3
+from boto3 import client as boto3_client, resource as boto3_resource
 import botocore
 from botocore.exceptions import ClientError
 
@@ -141,10 +141,21 @@ def lambda_handler(event, context):
     step = event['Step']
 
     # Setup the client
-    service_client = boto3.client('secretsmanager')
-
-    # Make sure the version is staged correctly
-    metadata = service_client.describe_secret(SecretId=arn)
+    try:
+        service_client = boto3_client('secretsmanager')
+        # Make sure the version is staged correctly
+        metadata = service_client.describe_secret(SecretId=arn)
+    except ClientError as e:
+        error_code = e.response['Error']['Code']
+        if error_code == 'ResourceNotFoundException':
+            log.error("Secret %s not found", arn)
+            raise ValueError(f"Secret {arn} not found") from e
+        elif error_code == 'InvalidRequestException':
+            log.error("Invalid request for secret %s", arn)
+            raise ValueError(f"Invalid request for secret {arn}") from e
+        else:
+            log.error("Failed to access Secrets Manager: %s", e)
+            raise RuntimeError(f"Unable to access secret {arn}: {e}") from e
     if not metadata['RotationEnabled']:
         log.error("Secret %s is not enabled for rotation", arn)
         raise ValueError(f"Secret {arn} is not enabled for rotation")
@@ -212,7 +223,7 @@ def create_secret(service_client, arn, token, region, smtp_iam_username):
         #Generate an SMTP password
 
         # Create new Access key and secret key
-        iam_client = boto3.client('iam')
+        iam_client = boto3_client('iam')
 
         smtp_iam_user_arn = _get_iam_user_arn(iam_client, smtp_iam_username)
 
@@ -273,16 +284,19 @@ def create_secret(service_client, arn, token, region, smtp_iam_username):
                                             SecretString=json.dumps(new_secret),
                                             VersionStages=['AWSPENDING'])
         except botocore.exceptions.ClientError as error:
-            log.error(error)
+            log.error("Failed to put secret value: %s", error)
             #TODO-maybe this should just mark inactive, and next go-round would check for inactive
             # to del before oldest akid?
             log.error("createSecret: Put secret failed, removing IAM key from user")
-            iam_client.delete_access_key(
-                UserName=smtp_iam_username,
-                AccessKeyId=new_access_key
-            )
-            log.error("createSecret: Secret couldn't be updated, removing IAM key pair")
-            raise error
+            try:
+                iam_client.delete_access_key(
+                    UserName=smtp_iam_username,
+                    AccessKeyId=new_access_key
+                )
+                log.error("createSecret: Secret couldn't be updated, removing IAM key pair")
+            except ClientError as cleanup_error:
+                log.error("Failed to cleanup IAM access key %s: %s", new_access_key, cleanup_error)
+            raise RuntimeError(f"Unable to create secret: {error}") from error
 
         log.info("createSecret: Successfully put secret for ARN %s and version %s.", arn, token)
 
@@ -323,18 +337,22 @@ def set_secret(service_client, arn, token, ssm_document_name, ssm_rotate_on_ec2_
         "attempting SSM Run Command against ec2 instance: %s", ssm_document_name, 
         ssm_rotate_on_ec2_instance_id)
 
-        ssm_client = boto3.client('ssm')
+        try:
+            ssm_client = boto3_client('ssm')
 
-        #TODO-verify more prescriptive; ie only run predefined script name w secret arn as parameter
+            #TODO-verify more prescriptive; ie only run predefined script name w secret arn as parameter
 
-        command_id = _execute_ssm_run_command(ssm_client, ssm_document_name,
-                                              ssm_rotate_on_ec2_instance_id, arn)
+            command_id = _execute_ssm_run_command(ssm_client, ssm_document_name,
+                                                  ssm_rotate_on_ec2_instance_id, arn)
 
-        # Wait for invocations to appear for the command
-        _wait_for_ssm_invocations(ssm_client, command_id, ssm_rotate_on_ec2_instance_id)
+            # Wait for invocations to appear for the command
+            _wait_for_ssm_invocations(ssm_client, command_id, ssm_rotate_on_ec2_instance_id)
 
-        # Check all complete successfully
-        _check_invocation_success(ssm_client, command_id, ssm_rotate_on_ec2_instance_id)
+            # Check all complete successfully
+            _check_invocation_success(ssm_client, command_id, ssm_rotate_on_ec2_instance_id)
+        except (ClientError, RuntimeError) as e:
+            log.error("Failed to execute SSM operations: %s", e)
+            raise RuntimeError(f"Unable to set secret via SSM on instance {ssm_rotate_on_ec2_instance_id}: {e}") from e
     else:
         log.info("setSecret: ssm_document_name or instance_id NOT provided, no SSM actions," \
         "continue...")
@@ -374,7 +392,7 @@ def test_secret(service_client, arn, token, ses_smtp_endpoint):
 
     if not TEST_STAGE_SENDER_EMAIL == "":
         # Create a new smtp client
-        smtp_client = smtplib.SMTP_SSL(ses_smtp_endpoint)
+        smtp_client = SMTP_SSL(ses_smtp_endpoint)
 
         # Re-try login attempts to give the new credential time to stabilise
         login_retry = 15
@@ -386,14 +404,14 @@ def test_secret(service_client, arn, token, ses_smtp_endpoint):
             # Try a login to the server
             try:
                 smtp_login = smtp_client.login(secret_username, secret_password)
-            except smtplib.SMTPAuthenticationError as e:
+            except SMTPAuthenticationError as e:
                 #guessing at error being raised to satisfy linter-revisit
                 log.info("error: %s: login unsuccessful: %s", e, login_retry)
-                time.sleep(1)
+                sleep(1)
                 login_retry -= 1
             except Exception as e:  # pylint: disable=broad-exception-caught
                 log.info("error: %s: login unsuccessful: %s", e, login_retry)
-                time.sleep(1)
+                sleep(1)
                 login_retry -= 1
             else:
                 if smtp_login[0] == 235:
@@ -411,10 +429,10 @@ def test_secret(service_client, arn, token, ses_smtp_endpoint):
         )
     else:
         mobile_key = "mobile"
-        friendly = "friendly"
+        # friendly = "friendly"
         not_friendly = "not-friendly"
-        log.info(f"Publishing a message with a {mobile_key}: {not_friendly} attribute.")
-        sns_wrapper = SnsWrapper(boto3.resource("sns"))
+        log.info("Publishing a message with a %s: %s attribute.", mobile_key, not_friendly)
+        sns_wrapper = SnsWrapper(boto3_resource("sns"))
         topic_arn = SNS_TOPIC_ARN
         sns_wrapper.publish_message(
             topic_arn,
@@ -465,7 +483,7 @@ def finish_secret(service_client, arn, token):
 
 def _sign(key, msg):
     """HMAC sign"""
-    return hmac.new(key, msg.encode('utf-8'), hashlib.sha256).digest()
+    return hmac_new(key, msg.encode('utf-8'), sha256).digest()
 
 
 def _calculate_key(secret_access_key, region):
@@ -490,24 +508,36 @@ def _execute_ssm_run_command(ssm_client, document_name, ec2_instance_id, secret_
 
     #TODO-should not send secrets through ssm send_command, verify more prescriptive
 
-    response = ssm_client.send_command(
-        InstanceIds=[
-            ec2_instance_id
-        ],
-        DocumentName=document_name,
-        CloudWatchOutputConfig={
-            'CloudWatchOutputEnabled': True
-            # 'CloudWatchLogGroupName':
-        },
-        Comment="Run /usr/local/bin/rotate_smtp.sh after SES credential rotation",
-        Parameters={
-            'commands': [
-                f'export SecretId="{secret_arn}"',
-                'bash /usr/local/bin/rotate_smtp.sh $SecretId'
-            ]
-        },
-        TimeoutSeconds=60,
-    )
+    try:
+        response = ssm_client.send_command(
+            InstanceIds=[
+                ec2_instance_id
+            ],
+            DocumentName=document_name,
+            CloudWatchOutputConfig={
+                'CloudWatchOutputEnabled': True
+                # 'CloudWatchLogGroupName':
+            },
+            Comment="Run /usr/local/bin/rotate_smtp.sh after SES credential rotation",
+            Parameters={
+                'commands': [
+                    f'export SecretId="{secret_arn}"',
+                    'bash /usr/local/bin/rotate_smtp.sh $SecretId'
+                ]
+            },
+            TimeoutSeconds=60,
+        )
+    except ClientError as e:
+        error_code = e.response['Error']['Code']
+        if error_code == 'InvalidInstanceId':
+            log.error("Invalid EC2 instance ID: %s", ec2_instance_id)
+            raise ValueError(f"Invalid EC2 instance ID: {ec2_instance_id}") from e
+        elif error_code == 'InvalidDocument':
+            log.error("Invalid SSM document: %s", document_name)
+            raise ValueError(f"Invalid SSM document: {document_name}") from e
+        else:
+            log.error("Failed to execute SSM command: %s", e)
+            raise RuntimeError(f"Unable to execute SSM command on instance {ec2_instance_id}: {e}") from e
     #   Targets=[
     #       {
     #           'Key': f"tag:{server_key}",
@@ -543,12 +573,12 @@ def _wait_for_ssm_invocations(ssm_client, command_id, instance_id):
             CommandId=command_id,InstanceId=instance_id)['CommandInvocations']) > 0:
             invocations_found = True
         else:
-            time.sleep(0.5)
+            sleep(0.5)
             retry -= 1
 
     if not invocations_found:
-        raise RuntimeError("SSM Document was not invoked on any instances, check the instance id"
-        " is set correctly")
+        raise RuntimeError(f"SSM Document was not invoked on any instances, check the instance id "
+        f"{instance_id} is set correctly (command: {command_id})")
 
 
 def _check_invocation_success(ssm_client, command_id, instance_id):
@@ -558,8 +588,13 @@ def _check_invocation_success(ssm_client, command_id, instance_id):
 
         complete_invocations = 0
         #too broad... should use get_command_invocation?  or how to limit perms
-        command_invocation_status = ssm_client.list_command_invocations(
-            CommandId=command_id,InstanceId=instance_id)['CommandInvocations']
+        try:
+            command_invocation_status = ssm_client.list_command_invocations(
+              CommandId=command_id,InstanceId=instance_id)['CommandInvocations']
+        except ClientError as e:
+            log.error("Failed to get SSM command invocation status: %s", e)
+            raise RuntimeError(f"Unable to check SSM command status: {e}") from e
+
         for invocation in command_invocation_status:
 
             log.info("setSecret: Status of SSM Run Command on instance %s is %s",
@@ -574,7 +609,7 @@ def _check_invocation_success(ssm_client, command_id, instance_id):
         if complete_invocations == total_invocations:
             invocations_complete = True
         else:
-            time.sleep(5)
+            sleep(5)
 
     # Raise an error if any were not successful
     command_invocation_status = ssm_client.list_command_invocations(
@@ -699,7 +734,7 @@ def _send_ses_email(smtp_host, smtp_port, smtp_username, smtp_password,
         msg["To"] = recipient_email
 
         # Connect to the SES SMTP server
-        server = smtplib.SMTP(smtp_host, smtp_port)
+        server = SMTP(smtp_host, smtp_port)
         server.ehlo()  # Identify yourself to the SMTP server
         server.starttls()  # Start TLS encryption
         server.ehlo()  # Re-identify after starting TLS
@@ -734,13 +769,14 @@ def _get_iam_user_arn(iam_service_client, username):
         iam_user_arn = response['User']['Arn']
         return iam_user_arn
     except iam_service_client.exceptions.NoSuchEntityException:
-        print(f"IAM user '{username}' not found.")
+        log.error("IAM user '%s' not found", username)
         return None
     except Exception as e: # pylint: disable=broad-exception-caught
-        print(f"An error occurred: {e}")
+        log.error("Failed to get IAM user ARN for '%s': %s", username, e)
         return None
 
 
+#https://github.com/awsdocs/aws-doc-sdk-examples/blob/main/python/example_code/sns/sns_basics.py#L339
 class SnsWrapper:
     """Encapsulates Amazon SNS topic and subscription functions."""
 
@@ -778,8 +814,8 @@ class SnsWrapper:
                 attributes,
                 topic.arn,
             )
-        except ClientError:
-            log.exception("Couldn't publish message to topic %s.", topic.arn)
-            raise
+        except ClientError as e:
+            log.error("Failed to publish message to topic %s: %s", topic.arn, e)
+            raise RuntimeError(f"Unable to publish SNS message to topic {topic.arn}: {e}") from e
         else:
             return message_id

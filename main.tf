@@ -136,6 +136,15 @@ resource "aws_sns_topic" "rotation_notifications" {
   name = "${local.lambda_name}-notifications"
 }
 
+resource "aws_sns_topic_subscription" "email_subscription" {
+  # Create the subscription only if var.notification_recipient_email is not ""
+  count = var.notification_recipient_email != "" ? 1 : 0
+
+  topic_arn = aws_sns_topic.rotation_notifications.arn
+  protocol  = "email"
+  endpoint  = var.notification_recipient_email
+}
+
 ##############################
 # Common
 ##############################

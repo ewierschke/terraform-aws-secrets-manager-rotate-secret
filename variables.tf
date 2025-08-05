@@ -52,13 +52,13 @@ variable "ses_smtp_endpoint" {
 }
 
 variable "notification_sender_email" {
-  description = "SES Verified identity/email address used in FROM field of notification email after rotation, if empty string function won't try to send notification of rotation"
+  description = "SES Verified identity/email address used in FROM field of notification email after rotation, if empty string function won't try to send SES notification of rotation using new rotated credentials"
   type        = string
   default     = ""
 }
 
 variable "notification_recipient_email" {
-  description = "Email address to send notification email to using new credentials, after rotation"
+  description = "Email address to send notification email to, if unset will not create SNS subscription"
   type        = string
   default     = ""
 }
