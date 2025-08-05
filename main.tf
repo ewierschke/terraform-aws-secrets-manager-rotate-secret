@@ -89,7 +89,7 @@ data "aws_iam_policy_document" "lambda" {
     ]
 
     resources = [
-      "${aws_sns_topic.aws_sns_topic.rotation_notifications.arn}"
+      "${aws_sns_topic.rotation_notifications.arn}"
     ]
   }
 
