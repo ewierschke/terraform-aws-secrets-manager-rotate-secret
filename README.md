@@ -18,19 +18,19 @@ Function environment variables are populated based on variable values in this mo
 
 The function follows structure from the Secrets Manager Rotation template and expects four steps.
 The function expects the target EC2 instance to be reachable via SSM for run_command execution, and 
-expects an executable script to exist within /usr/local/bin/rotate_smtp.sh that will be passed the 
+expects an executable script to exist within `/usr/local/bin/rotate_smtp.sh` that will accecpt the 
 secret arn so that instance adjustments can be made and rollback of failed rotations possible.  As 
 secret values should try to remain masked and local to use, this approach seemed safest.
 
 Summary of the four steps in the function:
-createSecret - will create a new iam access key pair (deleting old after minor colission avoidance 
+- createSecret - will create a new iam access key pair (deleting old after minor colission avoidance 
 and validation) and calculate the SMTP password before storing in the secrets' AWSPENDING label/stage. 
-setSecret - attempts to trigger the rotate_smtp.sh script which needs to query the provided secret 
+- setSecret - attempts to trigger the rotate_smtp.sh script which needs to query the provided secret 
 arn for the AWSPENDING label/stage on the target ec2 instance id via SSM run_command and check for
 successful execution.
-testSecret - Once a sucessful setSecret completes, if set, will attempt to use the new IAM 
+- testSecret - Once a sucessful setSecret completes, if set, will attempt to use the new IAM 
 credentials to send a test email
-finishSecret - If all prior steps succeed, moves the AWSCURRENT label/stage onto the AWSPENDING 
+- finishSecret - If all prior steps succeed, moves the AWSCURRENT label/stage onto the AWSPENDING 
 label/stage in order for future builds/rotations to retrieve the proper value.
 
 It is assumed that the rotate_smtp.sh script will contain logic to ensure the running application

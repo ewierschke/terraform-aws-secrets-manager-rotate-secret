@@ -24,11 +24,6 @@ from boto3 import client as boto3_client
 import botocore
 from botocore.exceptions import ClientError
 
-# logger = logging.getLogger()
-# # Get the log level from the environment variable and default to INFO if not set
-# log_level = os.environ.get('LOG_LEVEL', 'INFO')
-# log.setLevel(log_level)
-
 # Standard logging config
 DEFAULT_LOG_LEVEL = logging.INFO
 LOG_LEVELS = collections.defaultdict(
@@ -77,7 +72,7 @@ SMTP_REGIONS = [
     "us-gov-east-1",  # AWS GovCloud (US)
 ]
 
-REGION = os.environ.get("AWS_REGION")
+REGION = os.environ['AWS_REGION']
 #TODO-implement dry_run functionality that only logs what would be done but does not change values
 DRY_RUN = os.environ.get("DRY_RUN", "true").lower() == "true"
 TEST_STAGE_SES_SMTP_ENDPOINT = os.environ.get("SES_SMTP_ENDPOINT", "email-smtp.us-east-1.amazonaws.com") # Example for us-east-1
@@ -87,12 +82,12 @@ TEST_STAGE_EMAIL_BODY_TEXT = "This is a test email sent via Lambda function " + 
 TEST_STAGE_EMAIL_BODY_HTML = "<html><body><h1>Hello!</h1><p>This is a <b>test email</b> sent after secret rotation using Lambda/Python and Amazon SES SMTP.</p></body></html>"
 
 # what rotation targets and notification vars
-TEST_STAGE_SENDER_EMAIL = os.environ.get("NOTIFICATION_SENDER_EMAIL")
-TEST_STAGE_RECIPIENT_EMAIL = os.environ.get("NOTIFICATION_RECIPIENT_EMAIL")
-SMTP_IAM_USERNAME = os.environ['SMTP_IAM_USERNAME']
-SSM_ROTATION_DOCUMENT_NAME = os.environ['SSM_ROTATION_DOCUMENT_NAME']
-SSM_ROTATE_ON_EC2_INSTANCE_ID = os.environ['SSM_ROTATE_ON_EC2_INSTANCE_ID']
-SNS_TOPIC_ARN = os.environ['SNS_TOPIC_ARN']
+TEST_STAGE_SENDER_EMAIL = os.environ.get("NOTIFICATION_SENDER_EMAIL", "")
+TEST_STAGE_RECIPIENT_EMAIL = os.environ.get("NOTIFICATION_RECIPIENT_EMAIL", "")
+SMTP_IAM_USERNAME = os.environ.get("SMTP_IAM_USERNAME", "")
+SSM_ROTATION_DOCUMENT_NAME = os.environ.get("SSM_ROTATION_DOCUMENT_NAME", "")
+SSM_ROTATE_ON_EC2_INSTANCE_ID = os.environ.get("SSM_ROTATE_ON_EC2_INSTANCE_ID", "")
+SNS_TOPIC_ARN = os.environ.get("SNS_TOPIC_ARN", "")
 
 # These values are required to calculate the signature. Do not change them.
 DATE = "11111111"
@@ -216,17 +211,18 @@ def create_secret(service_client, arn, token, region, smtp_iam_username):
 
     #send notification to SNS topic
     log.info("createSecret:Publishing message to topic arn %s.", SNS_TOPIC_ARN)
-    sns_client = boto3_client('sns')
-    topic_arn = SNS_TOPIC_ARN
-    message_content = f"createSecret:Starting rotation of secret_arn: {arn}."
-    try:
-        response = sns_client.publish(
-            TopicArn=topic_arn,
-            Message=message_content,
-        )
-        log.info("createSecret:Message published successfully with response: %s", response)
-    except Exception as e:
-        print(f"Error publishing message: {e}")
+    # sns_client = boto3_client('sns')
+    # topic_arn = SNS_TOPIC_ARN
+    # message_content = f"createSecret:Starting rotation of secret_arn: {arn}."
+    # try:
+    #     response = sns_client.publish(
+    #         TopicArn=topic_arn,
+    #         Message=message_content,
+    #     )
+    #     log.info("createSecret:Message published successfully with response: %s", response)
+    # except ClientError as e:
+    #     log.error("Error publishing message: %s", e)
+    _publish_sns(SNS_TOPIC_ARN, "createSecret:Starting rotation of secret_arn: {arn}.")
 
     # Now try to get the secret version, if that fails, put a new secret
     try:
@@ -339,10 +335,6 @@ def set_secret(service_client, arn, token, ssm_document_name, ssm_rotate_on_ec2_
     #  in pending_secret
     _verify_user_name(pending_secret)
 
-    # secret_string = pending_secret['SecretString']
-    # secret_username = pending_secret['AccessKeyId']
-    # secret_password = pending_secret['SMTPPassword']
-
     # If SSM Document name provided, and ec2 instance id
     # Execute the SSM command against the tagged servers with the new secret
     #TODO-test w commands
@@ -353,9 +345,6 @@ def set_secret(service_client, arn, token, ssm_document_name, ssm_rotate_on_ec2_
 
         try:
             ssm_client = boto3_client('ssm')
-
-            #TODO-verify more prescriptive; ie only run predefined script name w secret arn as parameter
-
             command_id = _execute_ssm_run_command(ssm_client, ssm_document_name,
                                                   ssm_rotate_on_ec2_instance_id, arn)
 
@@ -364,9 +353,12 @@ def set_secret(service_client, arn, token, ssm_document_name, ssm_rotate_on_ec2_
 
             # Check all complete successfully
             _check_invocation_success(ssm_client, command_id, ssm_rotate_on_ec2_instance_id)
-        except (ClientError, RuntimeError) as e:
-            log.error("setSecret:Failed to execute SSM operations: %s", e)
+        except ClientError as e:
+            log.error("setSecret:Failed to execute SSM operations due to AWS error: %s", e)
             raise RuntimeError(f"Unable to set secret via SSM on instance {ssm_rotate_on_ec2_instance_id}: {e}") from e
+        except RuntimeError as e:
+            log.error("setSecret:Failed to execute SSM operations due to runtime error: %s", e)
+            raise
     else:
         log.info("setSecret: ssm_document_name or instance_id NOT provided, no SSM actions," \
         "continue...")
@@ -404,7 +396,7 @@ def test_secret(service_client, arn, token, ses_smtp_endpoint):
     secret_username = pending_secret['AccessKeyId']
     secret_password = pending_secret['SMTPPassword']
 
-    if not TEST_STAGE_SENDER_EMAIL == "":
+    if TEST_STAGE_SENDER_EMAIL != "":
         # Create a new smtp client
         smtp_client = SMTP_SSL(ses_smtp_endpoint)
 
@@ -442,35 +434,19 @@ def test_secret(service_client, arn, token, ses_smtp_endpoint):
            TEST_STAGE_EMAIL_BODY_TEXT, TEST_STAGE_EMAIL_BODY_HTML
         )
     else:
-        # mobile_key = "mobile"
-        # friendly = "friendly"
-        # not_friendly = "not-friendly"
-        # log.info("Publishing a message with a %s: %s attribute.", mobile_key, not_friendly)
-        # sns_wrapper = SnsWrapper(boto3_resource("sns"))
         log.info("testSecret:Publishing message to topic arn %s.", SNS_TOPIC_ARN)
-        sns_client = boto3_client('sns')
-        topic_arn = SNS_TOPIC_ARN
-        # sns_wrapper.publish_message(
-        #     topic_arn,
-        #     "Hey. This message is not mobile friendly, so you shouldn't get "
-        #     "it on your phone.",
-        #     {mobile_key: not_friendly},
-        # )
-        message_content = f"testSecret:test stage of secret rotation for secret arn: {arn}"
-        try:
-            response = sns_client.publish(
-                TopicArn=topic_arn,
-                Message=message_content,
-            )
-            log.info("testSecret:Message published successfully with response: %s", response)
-        except Exception as e:
-            print(f"Error publishing message: {e}")
-        # sns_wrapper.publish_message(
-        #     topic_arn,
-        #     "Hey. This message is not mobile friendly, so you shouldn't get "
-        #     "it on your phone.",
-        #     {mobile_key: not_friendly},
-        # )
+        # sns_client = boto3_client('sns')
+        # topic_arn = SNS_TOPIC_ARN
+        # message_content = f"testSecret:test stage of secret rotation for secret arn: {arn}"
+        # try:
+        #     response = sns_client.publish(
+        #         TopicArn=topic_arn,
+        #         Message=message_content,
+        #     )
+        #     log.info("testSecret:Message published successfully with response: %s", response)
+        # except ClientError as e:
+        #     log.error("Error publishing message: %s", e)
+        _publish_sns(SNS_TOPIC_ARN, "testSecret:test stage of secret rotation for secret arn: {arn}.")
         log.info("testSecret: TEST_STAGE_SENDER_EMAIL NOT provided, no test email sent using SMTP" \
         "credentials, continue...")
 
@@ -513,17 +489,18 @@ def finish_secret(service_client, arn, token):
              arn)
     #send notification to SNS topic
     log.info("finishSecret:Publishing message to topic arn %s.", SNS_TOPIC_ARN)
-    sns_client = boto3_client('sns')
-    topic_arn = SNS_TOPIC_ARN
-    message_content = f"finishSecret:Successfully rotated secret_arn: {arn}"
-    try:
-        response = sns_client.publish(
-            TopicArn=topic_arn,
-            Message=message_content,
-        )
-        log.info("finishSecret:Message published successfully with response: %s", response)
-    except Exception as e:
-        print(f"Error publishing message: {e}")
+    # sns_client = boto3_client('sns')
+    # topic_arn = SNS_TOPIC_ARN
+    # message_content = f"finishSecret:Successfully rotated secret_arn: {arn}"
+    # try:
+    #     response = sns_client.publish(
+    #         TopicArn=topic_arn,
+    #         Message=message_content,
+    #     )
+    #     log.info("finishSecret:Message published successfully with response: %s", response)
+    # except ClientError as e:
+    #     log.error("Error publishing message: %s", e)
+    _publish_sns(SNS_TOPIC_ARN, "finishSecret:Successfully rotated secret_arn: {arn}.")
 
 
 def _sign(key, msg):
@@ -583,23 +560,6 @@ def _execute_ssm_run_command(ssm_client, document_name, ec2_instance_id, secret_
         else:
             log.error("Failed to execute SSM command: %s", e)
             raise RuntimeError(f"Unable to execute SSM command on instance {ec2_instance_id}: {e}") from e
-    #   Targets=[
-    #       {
-    #           'Key': f"tag:{server_key}",
-    #           'Values': [
-    #               server_key_value,
-    #           ]
-    #       },
-    #   ],
-    #   Parameters={
-    #     'SESUsername': [
-    #       secret_username,
-    #     ],
-    #     'SESPassword': [
-    #       secret_password
-    #     ]
-    #   },
-    # )
 
     command_id = response['Command']['CommandId']
     log.info("setSecret: SSM Command ID %s executed.", command_id)
@@ -729,7 +689,7 @@ def _verify_user_name(secret):
         verificationException: username in Lambda environment variable doesn't match the one stored 
         in the secret
     """
-    env_iam_smtp_user_name = os.environ['SMTP_IAM_USERNAME']
+    env_iam_smtp_user_name = SMTP_IAM_USERNAME
     secret_user_name = secret["username"]
     if env_iam_smtp_user_name != secret_user_name:
         log.error("User %s is not allowed to use this Lambda function for rotation",
@@ -792,7 +752,7 @@ def _send_ses_email(smtp_host, smtp_port, smtp_username, smtp_password,
         server.close()
         log.info("Email sent successfully!")
 
-    except Exception as e:
+    except (SMTPAuthenticationError, ConnectionError, OSError) as e:
         #TODO-should new AKID be marked inactive here?
         raise RuntimeError(f"Error sending email: {e}") from e
 
@@ -821,46 +781,18 @@ def _get_iam_user_arn(iam_service_client, username):
         return None
 
 
-# #https://github.com/awsdocs/aws-doc-sdk-examples/blob/main/python/example_code/sns/sns_basics.py#L339
-# class SnsWrapper:
-#     """Encapsulates Amazon SNS topic and subscription functions."""
+def _publish_sns(topic_arn, message):
+    """
+    Publishes the given message to the provided topic arn.
 
-#     def __init__(self, sns_resource):
-#         """
-#         :param sns_resource: A Boto3 Amazon SNS resource.
-#         """
-#         self.sns_resource = sns_resource
+    Args:
+        topic_arn (str): The arn of the topic to publish to.
 
-
-#     @staticmethod
-#     def publish_message(topic, message, attributes):
-#         """
-#         Publishes a message, with attributes, to a topic. Subscriptions can be filtered
-#         based on message attributes so that a subscription receives messages only
-#         when specified attributes are present.
-
-#         :param topic: The topic to publish to.
-#         :param message: The message to publish.
-#         :param attributes: The key-value attributes to attach to the message. Values
-#                            must be either `str` or `bytes`.
-#         :return: The ID of the message.
-#         """
-#         try:
-#             att_dict = {}
-#             for key, value in attributes.items():
-#                 if isinstance(value, str):
-#                     att_dict[key] = {"DataType": "String", "StringValue": value}
-#                 elif isinstance(value, bytes):
-#                     att_dict[key] = {"DataType": "Binary", "BinaryValue": value}
-#             response = topic.publish(Message=message, MessageAttributes=att_dict)
-#             message_id = response["MessageId"]
-#             log.info(
-#                 "Published message with attributes %s to topic %s.",
-#                 attributes,
-#                 topic.arn,
-#             )
-#         except ClientError as e:
-#             log.error("Failed to publish message to topic %s: %s", topic.arn, e)
-#             raise RuntimeError(f"Unable to publish SNS message to topic {topic.arn}: {e}") from e
-#         else:
-#             return message_id
+        message (str): The message to publish.
+    """
+    sns_client = boto3_client('sns')
+    try:
+        response = sns_client.publish(TopicArn=topic_arn, Message=message)
+        log.info("SNS message published: %s", response)
+    except ClientError as e:
+        log.error("SNS publish failed: %s", e)
