@@ -148,7 +148,8 @@ resource "aws_lambda_permission" "secretmanager" {
 }
 
 resource "aws_sns_topic" "rotation_notifications" {
-  name = "${local.lambda_name}-notifications"
+  name              = "${local.lambda_name}-notifications"
+  kms_master_key_id = var.sns_kms_master_key_id
 }
 
 resource "aws_sns_topic_subscription" "email_subscription" {

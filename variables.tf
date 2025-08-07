@@ -9,8 +9,8 @@ variable "dry_run" {
   default     = true
 }
 
-#cloudwatch_logs_retention_in_days - security hub finding default is 365 days, but can be overridden
-#tracing_mode - security hub low finding when tracing is not enabled, default is PassThrough
+#cloudwatch_logs_retention_in_days - security hub finding; default to address finding is 365 days
+#tracing_mode - security hub low finding when Active tracing is not enabled, default is PassThrough
 variable "lambda" {
   description = "Object of optional attributes passed on to the lambda module"
   type = object({
@@ -82,4 +82,10 @@ variable "ssm_rotate_on_ec2_instance_id" {
   description = "EC2 instance ID (ie i-xxxxxxxxxxxxxxxxx) on which to execute SSM commands to rotate secret being used, if empty string provided, function won't attempt ssm:SendCommand"
   type        = string
   default     = ""
+}
+
+variable "sns_kms_master_key_id" {
+  description = "SNS KMS Master Key ID to use for SNS topic encryption, if not overridden, function will use default SNS KMS key"
+  type        = string
+  default     = "alias/aws/sns"
 }
