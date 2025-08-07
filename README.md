@@ -5,6 +5,10 @@ AWS Secrets Manager.
 
 This Lambda function (supporting resources are created by this module) would be configured as the 
 rotation function for a given Secrets Manager secret configured for automatic rotation.
+
+*Note - Initial/immediate rotation is performed as soon as the secrets Rotation configuration is set
+to Enabled for automatic rotation in Secrets Manager
+
 The secret is expected to contain the following key/value structure to ensure proper validation 
 prior to rotation:
 {
