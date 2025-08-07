@@ -2,6 +2,7 @@
 # Lambda
 ##############################
 module "lambda" {
+  #pinning to v7.14.0 to support aws provider v5.74
   source = "git::https://github.com/terraform-aws-modules/terraform-aws-lambda.git?ref=v7.14.0"
 
   function_name = local.lambda_name
@@ -28,6 +29,7 @@ module "lambda" {
   s3_prefix                         = var.lambda.s3_prefix
   store_on_s3                       = var.lambda.store_on_s3
   timeout                           = var.lambda.timeout
+  tracing_mode                      = var.lambda.tracing_mode
 
   source_path = [
     {

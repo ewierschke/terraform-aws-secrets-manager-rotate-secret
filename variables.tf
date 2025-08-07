@@ -9,6 +9,8 @@ variable "dry_run" {
   default     = true
 }
 
+#cloudwatch_logs_retention_in_days - security hub finding default is 365 days, but can be overridden
+#tracing_mode - security hub low finding when tracing is not enabled, default is PassThrough
 variable "lambda" {
   description = "Object of optional attributes passed on to the lambda module"
   type = object({
@@ -27,6 +29,7 @@ variable "lambda" {
     s3_prefix                         = optional(string)
     store_on_s3                       = optional(bool, false)
     timeout                           = optional(number, 300)
+    tracing_mode                      = optional(string, "PassThrough")
   })
   default = {}
 }
