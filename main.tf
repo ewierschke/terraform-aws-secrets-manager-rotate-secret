@@ -2,7 +2,7 @@
 # Lambda
 ##############################
 module "lambda" {
-  source = "git::https://github.com/terraform-aws-modules/terraform-aws-lambda.git?ref=v7.20.1"
+  source = "git::https://github.com/terraform-aws-modules/terraform-aws-lambda.git?ref=v7.20.2"
 
   function_name = local.lambda_name
 
@@ -13,20 +13,21 @@ module "lambda" {
   attach_policy_json = true
   policy_json        = data.aws_iam_policy_document.lambda.json
 
-  artifacts_dir            = var.lambda.artifacts_dir
-  build_in_docker          = var.lambda.build_in_docker
-  create_package           = var.lambda.create_package
-  ephemeral_storage_size   = var.lambda.ephemeral_storage_size
-  ignore_source_code_hash  = var.lambda.ignore_source_code_hash
-  local_existing_package   = var.lambda.local_existing_package
-  memory_size              = var.lambda.memory_size
-  recreate_missing_package = var.lambda.recreate_missing_package
-  runtime                  = var.lambda.runtime
-  s3_bucket                = var.lambda.s3_bucket
-  s3_existing_package      = var.lambda.s3_existing_package
-  s3_prefix                = var.lambda.s3_prefix
-  store_on_s3              = var.lambda.store_on_s3
-  timeout                  = var.lambda.timeout
+  artifacts_dir                     = var.lambda.artifacts_dir
+  build_in_docker                   = var.lambda.build_in_docker
+  cloudwatch_logs_retention_in_days = var.lambda.cloudwatch_logs_retention_in_days
+  create_package                    = var.lambda.create_package
+  ephemeral_storage_size            = var.lambda.ephemeral_storage_size
+  ignore_source_code_hash           = var.lambda.ignore_source_code_hash
+  local_existing_package            = var.lambda.local_existing_package
+  memory_size                       = var.lambda.memory_size
+  recreate_missing_package          = var.lambda.recreate_missing_package
+  runtime                           = var.lambda.runtime
+  s3_bucket                         = var.lambda.s3_bucket
+  s3_existing_package               = var.lambda.s3_existing_package
+  s3_prefix                         = var.lambda.s3_prefix
+  store_on_s3                       = var.lambda.store_on_s3
+  timeout                           = var.lambda.timeout
 
   source_path = [
     {
