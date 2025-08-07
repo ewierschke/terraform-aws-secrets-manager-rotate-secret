@@ -2,7 +2,7 @@
 # Lambda
 ##############################
 module "lambda" {
-  source = "git::https://github.com/terraform-aws-modules/terraform-aws-lambda.git?ref=v7.20.2"
+  source = "git::https://github.com/terraform-aws-modules/terraform-aws-lambda.git?ref=v7.14.0"
 
   function_name = local.lambda_name
 
