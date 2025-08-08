@@ -219,16 +219,18 @@ def create_secret(service_client, arn, token, region, smtp_iam_username):
     # in current_secret
     _verify_user_name(current_secret)
 
-    #publish message to SNS topic
-    log.info("createSecret:Publishing message to topic arn %s.", SNS_TOPIC_ARN)
-    _publish_sns(SNS_TOPIC_ARN, "createSecret:Starting rotation of secret_arn: {arn}.")
-
     # Now try to get the secret version, if that fails, put a new secret
     try:
         service_client.get_secret_value(SecretId=arn, VersionId=token, VersionStage="AWSPENDING")
         log.info("createSecret: Successfully retrieved secret for %s.", arn)
+        #publish message to SNS topic
+        log.debug("createSecret:Publishing message to topic arn %s.", SNS_TOPIC_ARN)
+        _publish_sns(SNS_TOPIC_ARN, f"createSecret:AWSPENDING already exists for secret: {arn}.")
     except service_client.exceptions.ResourceNotFoundException:
         log.info("createSecret: No AWSPENDING label exists, create new for %s.", arn)
+        #publish message to SNS topic
+        log.debug("createSecret:Publishing message to topic arn %s.", SNS_TOPIC_ARN)
+        _publish_sns(SNS_TOPIC_ARN, f"createSecret:create new AWSPENDING for secret_arn: {arn}.")
 
         #Generate an SMTP password
         # Create new Access key and secret key
@@ -466,12 +468,14 @@ def test_secret(service_client, arn, token, ses_smtp_endpoint):
            TEST_STAGE_SENDER_EMAIL, TEST_STAGE_RECIPIENT_EMAIL, TEST_STAGE_EMAIL_SUBJECT,
            TEST_STAGE_EMAIL_BODY_TEXT, TEST_STAGE_EMAIL_BODY_HTML
         )
-        _publish_sns(SNS_TOPIC_ARN, "testSecret:sent email w new credentials via SES for secret" \
-        " arn: {arn}.")
+        _publish_sns(
+            SNS_TOPIC_ARN, f"testSecret:sent email w new credentials via SES for secret arn: {arn}."
+            )
     else:
         log.info("testSecret:Publishing message to topic arn: %s.", SNS_TOPIC_ARN)
-        _publish_sns(SNS_TOPIC_ARN, "testSecret:no sender email provided, not testing new" \
-        " credentials against SES for secret arn: {arn}.")
+        _publish_sns(
+            SNS_TOPIC_ARN, f"testSecret:no sender email provided, not testing new credentials against SES for secret arn: {arn}."
+            )
         log.info("testSecret: TEST_STAGE_SENDER_EMAIL NOT provided, no test email sent using SMTP" \
         "credentials, continue...")
 
@@ -514,7 +518,7 @@ def finish_secret(service_client, arn, token):
              arn)
     #send notification to SNS topic
     log.info("finishSecret:Publishing message to topic arn %s.", SNS_TOPIC_ARN)
-    _publish_sns(SNS_TOPIC_ARN, "finishSecret:Successfully rotated secret_arn: {arn}.")
+    _publish_sns(SNS_TOPIC_ARN, f"finishSecret:Successfully rotated secret_arn: {arn}.")
 
 
 def _sign(key, msg):
