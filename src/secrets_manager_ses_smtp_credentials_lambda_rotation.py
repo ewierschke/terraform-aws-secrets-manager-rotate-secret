@@ -1,4 +1,4 @@
-"""Script to handle SMTP credential rotation, triggered by SecretsManager."""
+"""Script to handle AWS SES SMTP credential rotation, triggered by AWS Secrets Manager."""
 #!/usr/bin/env python3
 
 #ref-template from
@@ -114,11 +114,14 @@ def lambda_handler(event, context):
     potential workflow--to allow rollback to known working IAM AKID--ties failed AWSPENDING secret 
       to an AKID to be marked inactive before raising errors?
     create_secret - checks for AKID count and status, if an inactive key is found delete first, 
-      if still 2 keys found, delete oldest, mark new secret as pending
-    set_secret - runs SSM commands to set pending secret in ec2 instance id, if fails, mark new AKID
-      as Inactive (to allow AWSCURRENT secret to continue functioning)
-    test_secret - send an email w new credential, if fails mark new AKID as Inactive
-    finish_secret - changes secret label of AWSPENDING to AWSCURRENT, leaves both AKIDs active (tbd)
+      if still 2 keys found, delete oldest if AKID doesn't match AWSCURRENT, mark new secret as
+      pending
+    set_secret - runs SSM run_command to execute specific script to set pending secret in ec2
+      instance id
+    test_secret - send an email w new credential
+    finish_secret - changes secret label of AWSPENDING to AWSCURRENT, leaves both AKIDs active as
+      set_secret may not always set in an instance id; revisit-should try to set inactive when
+      possible for security hub finding
 
     Args:
         event (dict): Lambda dictionary of event parameters. These keys must include the following:

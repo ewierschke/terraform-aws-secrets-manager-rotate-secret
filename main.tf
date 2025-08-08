@@ -82,7 +82,7 @@ data "aws_iam_policy_document" "lambda" {
     ]
 
     resources = [
-      "arn:${data.aws_partition.current.partition}:iam::*:user/${var.smtp_iam_username}"
+      "arn:${data.aws_partition.current.partition}:iam::${data.aws_caller_identity.current.account_id}:user/${var.smtp_iam_username}"
     ]
   }
 
