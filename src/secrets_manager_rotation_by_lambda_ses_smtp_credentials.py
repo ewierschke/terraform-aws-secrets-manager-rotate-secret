@@ -474,7 +474,8 @@ def test_secret(service_client, arn, token, ses_smtp_endpoint):
     else:
         log.info("testSecret:Publishing message to topic arn: %s.", SNS_TOPIC_ARN)
         _publish_sns(
-            SNS_TOPIC_ARN, f"testSecret:no sender email provided, not testing new credentials against SES for secret arn: {arn}."
+            SNS_TOPIC_ARN, f"""testSecret:no sender email provided, not testing new SMTP
+             credentials against SES for: {arn}."""
             )
         log.info("testSecret: TEST_STAGE_SENDER_EMAIL NOT provided, no test email sent using SMTP" \
         "credentials, continue...")
@@ -725,7 +726,7 @@ def _verify_user_name(secret):
             )
 
 
-#TODO-test
+#TODO-need to confirm functional within account not in SES sandbox
 def _send_ses_email(smtp_host, smtp_port, smtp_username, smtp_password,
                    sender_email, recipient_email, subject, body_text, body_html=None):
     """
@@ -776,6 +777,7 @@ def _send_ses_email(smtp_host, smtp_port, smtp_username, smtp_password,
         server.login(smtp_username, smtp_password)
 
         # Send the email
+        #possible fails if account is still in SES sandbox for region
         server.sendmail(sender_email, recipient_email, msg.as_string())
         server.close()
         log.info("Email sent successfully!")

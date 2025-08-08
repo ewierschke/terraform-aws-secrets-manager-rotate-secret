@@ -7,8 +7,8 @@ module "lambda" {
 
   function_name = local.lambda_name
 
-  description = "Secrets Manager Initiated Lambda rotation of SES SMTP credentials-${var.project_name}"
-  handler     = "secrets_manager_ses_smtp_credentials_lambda_rotation.lambda_handler"
+  description = "Secrets Manager Initiated rotation by Lamda Function of SES SMTP credentials-${var.project_name}"
+  handler     = "secrets_manager_rotation_by_lambda_ses_smtp_credentials.lambda_handler"
   tags        = var.tags
 
   attach_policy_json = true
