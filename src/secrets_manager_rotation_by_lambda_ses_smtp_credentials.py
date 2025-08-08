@@ -79,14 +79,18 @@ TEST_STAGE_SES_SMTP_ENDPOINT = os.environ.get(
     "SES_SMTP_ENDPOINT", "email-smtp.us-east-1.amazonaws.com"
     ) # Example for us-east-1
 TEST_STAGE_SES_SMTP_PORT = 587
-TEST_STAGE_EMAIL_SUBJECT = """Test Email from Lambda-"+ os.environ['AWS_LAMBDA_FUNCTION_NAME']
- + " via Amazon SES"""
-TEST_STAGE_EMAIL_BODY_TEXT = """This is a test email sent via Lambda function "
- + os.environ['AWS_LAMBDA_FUNCTION_NAME']
- + " after Secrets Manager triggered secret rotation using new Amazon SES SMTP credentials."""
-TEST_STAGE_EMAIL_BODY_HTML = """<html><body><h1>Hello!</h1><p>This is a <b>test email</b> sent via
- Lambda function " + os.environ['AWS_LAMBDA_FUNCTION_NAME'] + " after Secrets Manager triggered
- secret rotation using new Amazon SES SMTP credentials.</p></body></html>"""
+TEST_STAGE_EMAIL_SUBJECT = ("Test Email from Lambda-" + os.environ['AWS_LAMBDA_FUNCTION_NAME'] +
+                           " via Amazon SES")
+
+TEST_STAGE_EMAIL_BODY_TEXT = ("This is a test email sent via Lambda function " +
+                             os.environ['AWS_LAMBDA_FUNCTION_NAME'] +
+                             " after Secrets Manager triggered secret rotation using new Amazon " +
+                             "SES SMTP credentials.")
+
+TEST_STAGE_EMAIL_BODY_HTML = ("<html><body><h1>Hello!</h1><p>This is a <b>test email</b> sent " +
+                             "via Lambda function " + os.environ['AWS_LAMBDA_FUNCTION_NAME'] + 
+                             " after Secrets Manager triggered secret rotation using new Amazon " +
+                             "SES SMTP credentials.</p></body></html>")
 
 # what rotation targets and notification vars
 TEST_STAGE_SENDER_EMAIL = os.environ.get("NOTIFICATION_SENDER_EMAIL", "")
@@ -653,8 +657,8 @@ def _check_invocation_success(ssm_client, command_id, instance_id):
     invocation_errors = ""
     for invocation in command_invocation_status:
         if invocation['Status'] != 'Success':
-            invocation_errors += f"""SSM Invocation on
-              host {invocation['InstanceId']}  {invocation['Status']}\n"""
+            invocation_errors += (f"SSM Invocation on host {invocation['InstanceId']} "
+                     f"{invocation['Status']}\n")
 
     if invocation_errors:
         #TODO-should new akid be marked inactive here?
@@ -730,7 +734,7 @@ def _verify_user_name(secret):
     secret_user_name = secret["username"]
     if env_iam_smtp_user_name != secret_user_name:
         log.error("User %s is not allowed to use this Lambda function for rotation",
-                  secret_user_name)
+                secret_user_name)
         raise ValueError(
             f"User {secret_user_name} is not allowed to use this Lambda function for rotation"
             )
@@ -831,6 +835,7 @@ def _publish_sns(topic_arn, message):
         message (str): The message to publish.
     """
     sns_client = boto3_client('sns')
+    message += os.environ['AWS_LAMBDA_FUNCTION_NAME'] + '-' + message
     try:
         response = sns_client.publish(TopicArn=topic_arn, Message=message)
         log.debug("SNS message published: %s", response)
