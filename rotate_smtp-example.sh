@@ -1,8 +1,9 @@
 #!/bin/bash
 
 #Application specific scripts assumed to be pre-created on EC2 instance
-#should not pass secret values from lambda to EC2 instance via ssm send_command,
-#only secret arn to be queried for AWSPENDING stage label here/locally on ec2
+#should not pass secret values from lambda to EC2 instance via ssm send_command.
+#Script should expect secret arn to be provided to script in order to query for AWSPENDING stage
+#label here/locally on ec2
 #
 #potential to have lambda query for success flag (SMTPPASSWORDUPDATESUCCESSFUL) in stdout to
 #determine success or potentially just check for invocation success

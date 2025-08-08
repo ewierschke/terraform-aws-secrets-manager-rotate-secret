@@ -7,8 +7,8 @@ module "lambda" {
 
   function_name = local.lambda_name
 
-  description = "Secrets Manager Initiated Lambda rotation of SES SMTP password-${var.project_name}"
-  handler     = "secrets_manager_ses_smtp_pass_lambda_rotation.lambda_handler"
+  description = "Secrets Manager Initiated Lambda rotation of SES SMTP credentials-${var.project_name}"
+  handler     = "secrets_manager_ses_smtp_credentials_lambda_rotation.lambda_handler"
   tags        = var.tags
 
   attach_policy_json = true
@@ -21,6 +21,7 @@ module "lambda" {
   ephemeral_storage_size            = var.lambda.ephemeral_storage_size
   ignore_source_code_hash           = var.lambda.ignore_source_code_hash
   local_existing_package            = var.lambda.local_existing_package
+  logging_log_group                 = var.lambda.logging_log_group
   memory_size                       = var.lambda.memory_size
   recreate_missing_package          = var.lambda.recreate_missing_package
   runtime                           = var.lambda.runtime
@@ -30,6 +31,7 @@ module "lambda" {
   store_on_s3                       = var.lambda.store_on_s3
   timeout                           = var.lambda.timeout
   tracing_mode                      = var.lambda.tracing_mode
+  use_existing_cloudwatch_log_group = var.lambda.use_existing_cloudwatch_log_group
 
   source_path = [
     {
@@ -54,7 +56,7 @@ module "lambda" {
 
 data "aws_iam_policy_document" "lambda" {
   statement {
-    sid = "AccessSecrets"
+    sid = "AccessSecret"
 
     actions = [
       "secretsmanager:GetSecretValue",
@@ -64,7 +66,7 @@ data "aws_iam_policy_document" "lambda" {
     ]
 
     resources = [
-      "*"
+      "${var.secret_arn_for_lambda_policy}"
     ]
   }
 
@@ -138,7 +140,7 @@ data "aws_iam_policy_document" "lambda" {
 }
 
 locals {
-  lambda_name = "${var.project_name}-rotate-secret-ses-smtp-password"
+  lambda_name = "${var.project_name}-rotate-secret-ses-smtp-credentials"
 }
 
 resource "aws_lambda_permission" "secretmanager" {

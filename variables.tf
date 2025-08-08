@@ -9,8 +9,9 @@ variable "dry_run" {
   default     = true
 }
 
-#cloudwatch_logs_retention_in_days - security hub finding; default to address finding is 365 days
+#cloudwatch_logs_retention_in_days - security hub medium finding; default to address finding is 365 days
 #tracing_mode - security hub low finding when Active tracing is not enabled, default is PassThrough
+#use_existing_cloudwatch_log_group and logging_log_group - may be required for govcloud 
 variable "lambda" {
   description = "Object of optional attributes passed on to the lambda module"
   type = object({
@@ -21,6 +22,7 @@ variable "lambda" {
     ephemeral_storage_size            = optional(number)
     ignore_source_code_hash           = optional(bool, true)
     local_existing_package            = optional(string)
+    logging_log_group                 = optional(string, null)
     memory_size                       = optional(number, 128)
     recreate_missing_package          = optional(bool, false)
     runtime                           = optional(string, "python3.12")
@@ -30,6 +32,7 @@ variable "lambda" {
     store_on_s3                       = optional(bool, false)
     timeout                           = optional(number, 300)
     tracing_mode                      = optional(string, "PassThrough")
+    use_existing_cloudwatch_log_group = optional(bool, false)
   })
   default = {}
 }
@@ -56,13 +59,13 @@ variable "ses_smtp_endpoint" {
 }
 
 variable "notification_sender_email" {
-  description = "SES Verified identity/email address used in FROM field of notification email after rotation, if empty string function won't try to send SES notification of rotation using new rotated credentials"
+  description = "SES Verified identity/email address used in FROM field of notification email after rotation, if empty string provided, function won't try to send SES notification of rotation using new rotated credentials"
   type        = string
   default     = ""
 }
 
 variable "notification_recipient_email" {
-  description = "Email address to send notification email to, if unset will not create SNS subscription"
+  description = "Email address to send notification email to, if empty string provided, will not create SNS subscription"
   type        = string
   default     = ""
 }
@@ -73,7 +76,7 @@ variable "smtp_iam_username" {
 }
 
 variable "ssm_rotation_document_name" {
-  description = "SSM Document name (ie AWS-RunShellScript) to use with Command List for updating credentials on EC2 instance id provided"
+  description = "SSM Document name (ie AWS-RunShellScript) to use for updating credentials on EC2 instance id provided"
   type        = string
   default     = "AWS-RunShellScript"
 }
@@ -85,7 +88,12 @@ variable "ssm_rotate_on_ec2_instance_id" {
 }
 
 variable "sns_kms_master_key_id" {
-  description = "SNS KMS Master Key ID to use for SNS topic encryption, if not overridden, function will use default SNS KMS key"
+  description = "SNS KMS Master Key ID to use for SNS topic encryption, if not overridden, will use default SNS KMS key"
   type        = string
   default     = "alias/aws/sns"
+}
+
+variable "secret_arn_for_lambda_policy" {
+  description = "ARN of the secret to be configured for rotation, this is used to allow the lambda function to access only this secret"
+  type        = string
 }

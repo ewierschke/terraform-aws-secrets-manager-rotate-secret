@@ -75,11 +75,18 @@ SMTP_REGIONS = [
 REGION = os.environ['AWS_REGION']
 #TODO-implement dry_run functionality that only logs what would be done but does not change values
 DRY_RUN = os.environ.get("DRY_RUN", "true").lower() == "true"
-TEST_STAGE_SES_SMTP_ENDPOINT = os.environ.get("SES_SMTP_ENDPOINT", "email-smtp.us-east-1.amazonaws.com") # Example for us-east-1
+TEST_STAGE_SES_SMTP_ENDPOINT = os.environ.get(
+    "SES_SMTP_ENDPOINT", "email-smtp.us-east-1.amazonaws.com"
+    ) # Example for us-east-1
 TEST_STAGE_SES_SMTP_PORT = 587
-TEST_STAGE_EMAIL_SUBJECT = "Test Email from Lambda-"+ os.environ['AWS_LAMBDA_FUNCTION_NAME'] + " via Amazon SES"
-TEST_STAGE_EMAIL_BODY_TEXT = "This is a test email sent via Lambda function " + os.environ['AWS_LAMBDA_FUNCTION_NAME'] + " after Secrets Manager triggered secret rotation using new Amazon SES credentials."
-TEST_STAGE_EMAIL_BODY_HTML = "<html><body><h1>Hello!</h1><p>This is a <b>test email</b> sent after secret rotation using Lambda/Python and Amazon SES SMTP.</p></body></html>"
+TEST_STAGE_EMAIL_SUBJECT = """Test Email from Lambda-"+ os.environ['AWS_LAMBDA_FUNCTION_NAME']
+ + " via Amazon SES"""
+TEST_STAGE_EMAIL_BODY_TEXT = """This is a test email sent via Lambda function "
+ + os.environ['AWS_LAMBDA_FUNCTION_NAME']
+ + " after Secrets Manager triggered secret rotation using new Amazon SES SMTP credentials."""
+TEST_STAGE_EMAIL_BODY_HTML = """<html><body><h1>Hello!</h1><p>This is a <b>test email</b> sent via
+ Lambda function " + os.environ['AWS_LAMBDA_FUNCTION_NAME'] + " after Secrets Manager triggered
+ secret rotation using new Amazon SES SMTP credentials.</p></body></html>"""
 
 # what rotation targets and notification vars
 TEST_STAGE_SENDER_EMAIL = os.environ.get("NOTIFICATION_SENDER_EMAIL", "")
@@ -163,7 +170,9 @@ def lambda_handler(event, context):
         return
     elif "AWSPENDING" not in versions[token]:
         log.error("Secret version %s not set as AWSPENDING for rotation of secret %s.", token, arn)
-        raise ValueError(f"Secret version {token} not set as AWSPENDING for rotation of secret {arn}.")
+        raise ValueError(
+            f"Secret version {token} not set as AWSPENDING for rotation of secret {arn}."
+            )
 
     if step == "createSecret":
         log.info("Executing Create Secret Function")
@@ -174,8 +183,6 @@ def lambda_handler(event, context):
                    SSM_ROTATE_ON_EC2_INSTANCE_ID)
     elif step == "testSecret":
         log.info("Executing Test Secret Function")
-        #TODO - decide about adding more params... need to provide option to send email or just
-        #  continue
         test_secret(service_client, arn, token, TEST_STAGE_SES_SMTP_ENDPOINT)
     elif step == "finishSecret":
         log.info("Executing Finish Secret Function")
@@ -209,19 +216,8 @@ def create_secret(service_client, arn, token, region, smtp_iam_username):
     # in current_secret
     _verify_user_name(current_secret)
 
-    #send notification to SNS topic
+    #publish message to SNS topic
     log.info("createSecret:Publishing message to topic arn %s.", SNS_TOPIC_ARN)
-    # sns_client = boto3_client('sns')
-    # topic_arn = SNS_TOPIC_ARN
-    # message_content = f"createSecret:Starting rotation of secret_arn: {arn}."
-    # try:
-    #     response = sns_client.publish(
-    #         TopicArn=topic_arn,
-    #         Message=message_content,
-    #     )
-    #     log.info("createSecret:Message published successfully with response: %s", response)
-    # except ClientError as e:
-    #     log.error("Error publishing message: %s", e)
     _publish_sns(SNS_TOPIC_ARN, "createSecret:Starting rotation of secret_arn: {arn}.")
 
     # Now try to get the secret version, if that fails, put a new secret
@@ -230,8 +226,8 @@ def create_secret(service_client, arn, token, region, smtp_iam_username):
         log.info("createSecret: Successfully retrieved secret for %s.", arn)
     except service_client.exceptions.ResourceNotFoundException:
         log.info("createSecret: No AWSPENDING label exists, create new for %s.", arn)
-        #Generate an SMTP password
 
+        #Generate an SMTP password
         # Create new Access key and secret key
         iam_client = boto3_client('iam')
 
@@ -240,13 +236,14 @@ def create_secret(service_client, arn, token, region, smtp_iam_username):
         keys_response = iam_client.list_access_keys(UserName=smtp_iam_username)
         access_keys = sorted(keys_response['AccessKeyMetadata'], key=lambda x: x['CreateDate'])
 
-        #IAM user can have 2 keys, delete any inactive then if still 2, verify AWSCURRENT is not to
-        # be deleted (if AWSCURRENT is to be deleted, del other), then delete the oldest before
+        #IAM user can have 2 keys, delete any inactive then if still 2, verify secret AWSCURRENT is
+        #not oldest (if AWSCURRENT is to be deleted, del other AKID), then delete the oldest before
         #  creating a new one
-        #TODO-need to ensure we're not deleting working key to make sure for new... make sure
-        # original still works until new is successfully set/tested in instance id
 
-        #first try to del inactive then if still 2 keys, del oldest
+        #first try to del inactive then if still 2 keys, del oldest if not in secret as AWSCURRENT
+        if len(access_keys) == 0:
+            log.info("createSecret: No access keys found for %s, creating new access" \
+            " key.", smtp_iam_username)
         if len(access_keys) >= 2:
             for access_key in access_keys:
                 if access_key['Status'] == 'Inactive':
@@ -282,7 +279,7 @@ def create_secret(service_client, arn, token, region, smtp_iam_username):
         #some secret dict structure validation, expects json w four keys;
         #iam_user_arn (key must be pre-populated, func updates value to show which user the
         # generated AKID belongs to), username (value must match lambda func env var),
-        # AccessKeyId, SMTPPassword
+        # AccessKeyId, SMTPPassword, desination_service
         new_secret = _get_secret_dict(service_client, arn, "AWSCURRENT")
         new_secret['iam_user_arn'] = smtp_iam_user_arn
         new_secret['AccessKeyId'] = new_access_key
@@ -327,20 +324,46 @@ def set_secret(service_client, arn, token, ssm_document_name, ssm_rotate_on_ec2_
         token (string): The ClientRequestToken associated with the secret version
     """
     # This is where the secret should be set in the service
-    # Make sure the current secret exists
-    _get_secret_dict(service_client, arn, "AWSCURRENT")
-    pending_secret = _get_secret_dict(service_client, arn, "AWSPENDING", token)
 
-    # Verify if the username stored in environment variable is the same with the one stored
-    #  in pending_secret
+    #Before updating the credential (to avoid confused deputy attack):
+    #-potentially try to login against SES using credentials in AWSCURRENT, if fails, abandon
+    #-check that iam_user_arn in AWSCURRENT matches the one in AWSPENDING
+    #-check the destination_service string in AWSCURRENT matches the one in AWSPENDING
+
+    # Make sure the current secret exists and secret username matches function env variable
+    current_secret = _get_secret_dict(service_client, arn, "AWSCURRENT")
+    _verify_user_name(current_secret)
+
+    #TODO-try to login to SES endpoint using AWSCURRENT credentials, if fails, abandon rotation
+
+    # Get the pending secret
+    pending_secret = _get_secret_dict(service_client, arn, "AWSPENDING", token)
+    # Verify the username stored in function environment variable is the same as the one stored
+    # in pending_secret
     _verify_user_name(pending_secret)
 
-    # If SSM Document name provided, and ec2 instance id
-    # Execute the SSM command against the tagged servers with the new secret
-    #TODO-test w commands
+    # Validates that destination_service key matches between AWSPENDING and AWSCURRENT
+    if current_secret['destination_service'] != pending_secret['destination_service']:
+        log.error(
+            "set_secret: secret %s destination_service key does not match between stages.", arn
+            )
+        raise KeyError(
+            f"set_secret: secret {arn} destination_service key does not match between stages."
+            )
+
+    # Validates that iam_user_arn key matches between AWSPENDING and AWSCURRENT
+    if current_secret['iam_user_arn'] != pending_secret['iam_user_arn']:
+        log.error(
+            "set_secret: secret %s iam_user_arn key does not match between stages.", arn
+            )
+        raise KeyError(
+            f"set_secret: secret {arn} iam_user_arn key does not match between stages."
+            )
+
+    # If ec2 instance id provided, run SSM command to execute script to set the secret
     if not ssm_rotate_on_ec2_instance_id == "":
-        log.info("setSecret: ssm_document_name provided: %s, " \
-        "attempting SSM Run Command against ec2 instance: %s", ssm_document_name, 
+        log.info("setSecret: attempting SSM Run Command using %s document against ec2" \
+        " instance: %s", ssm_document_name, 
         ssm_rotate_on_ec2_instance_id)
 
         try:
@@ -353,18 +376,24 @@ def set_secret(service_client, arn, token, ssm_document_name, ssm_rotate_on_ec2_
 
             # Check all complete successfully
             _check_invocation_success(ssm_client, command_id, ssm_rotate_on_ec2_instance_id)
+
+            log.info("setSecret: Successfully set secret for %s against ec2 instance: %s.", arn,
+              ssm_rotate_on_ec2_instance_id)
+            #potentially set AWSCURRENT based AKID to inactive here now that the app is
+            #using AWSPENDING AKID
         except ClientError as e:
             log.error("setSecret:Failed to execute SSM operations due to AWS error: %s", e)
-            raise RuntimeError(f"Unable to set secret via SSM on instance {ssm_rotate_on_ec2_instance_id}: {e}") from e
+            raise RuntimeError(
+                f"Unable to set secret via SSM on instance {ssm_rotate_on_ec2_instance_id}: {e}"
+                ) from e
         except RuntimeError as e:
             log.error("setSecret:Failed to execute SSM operations due to runtime error: %s", e)
             raise
     else:
-        log.info("setSecret: ssm_document_name or instance_id NOT provided, no SSM actions," \
+        log.info("setSecret: ssm_rotate_on_ec2_instance_id NOT provided, no SSM actions," \
         "continue...")
 
-    log.info("setSecret: Successfully set secret for %s against %s.", arn,
-              ssm_rotate_on_ec2_instance_id)
+    log.info("setSecret: Completed")
 
 
 def test_secret(service_client, arn, token, ses_smtp_endpoint):
@@ -385,17 +414,16 @@ def test_secret(service_client, arn, token, ses_smtp_endpoint):
     """
     # This is where the secret should be tested against the service
     # Get the pending secret
-    # pending_secret = service_client.get_secret_value(SecretId=arn, VersionId=token,
-    #  VersionStage="AWSPENDING")['SecretString']
     pending_secret = _get_secret_dict(service_client, arn, "AWSPENDING", token)
 
     # Verify if the username stored in environment variable is the same with the one stored
-    #  in pending_secret
+    # in pending_secret
     _verify_user_name(pending_secret)
 
     secret_username = pending_secret['AccessKeyId']
     secret_password = pending_secret['SMTPPassword']
 
+    # If the TEST_STAGE_SENDER_EMAIL is provided, send a test email using the new credentials
     if TEST_STAGE_SENDER_EMAIL != "":
         # Create a new smtp client
         smtp_client = SMTP_SSL(ses_smtp_endpoint)
@@ -425,28 +453,22 @@ def test_secret(service_client, arn, token, ses_smtp_endpoint):
 
         if not successful:
             #TODO-should new AKID be marked inactive here?
+            #is SES configured in account?
             raise RuntimeError(f"Unable to login to smtp server : {smtp_login}")
 
-        #TODO-revisit vars to pass
+        log.info("testSecret: Successfully logged in to SMTP server with new credentials.")
+        # Create the email message
         _send_ses_email(
           ses_smtp_endpoint, TEST_STAGE_SES_SMTP_PORT, secret_username, secret_password,
            TEST_STAGE_SENDER_EMAIL, TEST_STAGE_RECIPIENT_EMAIL, TEST_STAGE_EMAIL_SUBJECT,
            TEST_STAGE_EMAIL_BODY_TEXT, TEST_STAGE_EMAIL_BODY_HTML
         )
+        _publish_sns(SNS_TOPIC_ARN, "testSecret:sent email w new credentials via SES for secret" \
+        " arn: {arn}.")
     else:
-        log.info("testSecret:Publishing message to topic arn %s.", SNS_TOPIC_ARN)
-        # sns_client = boto3_client('sns')
-        # topic_arn = SNS_TOPIC_ARN
-        # message_content = f"testSecret:test stage of secret rotation for secret arn: {arn}"
-        # try:
-        #     response = sns_client.publish(
-        #         TopicArn=topic_arn,
-        #         Message=message_content,
-        #     )
-        #     log.info("testSecret:Message published successfully with response: %s", response)
-        # except ClientError as e:
-        #     log.error("Error publishing message: %s", e)
-        _publish_sns(SNS_TOPIC_ARN, "testSecret:test stage of secret rotation for secret arn: {arn}.")
+        log.info("testSecret:Publishing message to topic arn: %s.", SNS_TOPIC_ARN)
+        _publish_sns(SNS_TOPIC_ARN, "testSecret:no sender email provided, not testing new" \
+        " credentials against SES for secret arn: {arn}.")
         log.info("testSecret: TEST_STAGE_SENDER_EMAIL NOT provided, no test email sent using SMTP" \
         "credentials, continue...")
 
@@ -489,17 +511,6 @@ def finish_secret(service_client, arn, token):
              arn)
     #send notification to SNS topic
     log.info("finishSecret:Publishing message to topic arn %s.", SNS_TOPIC_ARN)
-    # sns_client = boto3_client('sns')
-    # topic_arn = SNS_TOPIC_ARN
-    # message_content = f"finishSecret:Successfully rotated secret_arn: {arn}"
-    # try:
-    #     response = sns_client.publish(
-    #         TopicArn=topic_arn,
-    #         Message=message_content,
-    #     )
-    #     log.info("finishSecret:Message published successfully with response: %s", response)
-    # except ClientError as e:
-    #     log.error("Error publishing message: %s", e)
     _publish_sns(SNS_TOPIC_ARN, "finishSecret:Successfully rotated secret_arn: {arn}.")
 
 
@@ -559,7 +570,9 @@ def _execute_ssm_run_command(ssm_client, document_name, ec2_instance_id, secret_
             raise ValueError(f"Invalid SSM document: {document_name}") from e
         else:
             log.error("Failed to execute SSM command: %s", e)
-            raise RuntimeError(f"Unable to execute SSM command on instance {ec2_instance_id}: {e}") from e
+            raise RuntimeError(
+                f"Unable to execute SSM command on instance {ec2_instance_id}: {e}"
+                ) from e
 
     command_id = response['Command']['CommandId']
     log.info("setSecret: SSM Command ID %s executed.", command_id)
@@ -622,7 +635,8 @@ def _check_invocation_success(ssm_client, command_id, instance_id):
     invocation_errors = ""
     for invocation in command_invocation_status:
         if invocation['Status'] != 'Success':
-            invocation_errors += f"SSM Invocation on host {invocation['InstanceId']}  {invocation['Status']}\n"
+            invocation_errors += f"""SSM Invocation on
+              host {invocation['InstanceId']}  {invocation['Status']}\n"""
 
     if invocation_errors:
         #TODO-should new akid be marked inactive here?
@@ -671,8 +685,13 @@ def _get_secret_dict(secrets_manager_service_client, secret_arn, stage, token=No
 
     # Validates if there is a user associated to the secret
     if "iam_user_arn" not in secret_dict:
-        log.error("createSecret: secret %s has no iam_user_arn defined.", secret_arn)
-        raise KeyError(f"createSecret: secret {secret_arn} has no iam_user_arn defined.")
+        log.error("_get_secret_dict: secret %s has no iam_user_arn defined.", secret_arn)
+        raise KeyError(f"_get_secret_dict: secret {secret_arn} has no iam_user_arn defined.")
+
+    # Validates if there is a destination_service associated to the secret
+    if "destination_service" not in secret_dict:
+        log.error("_get_secret_dict: secret %s has no destination_service defined.", secret_arn)
+        raise KeyError(f"_get_secret_dict: secret {secret_arn} has no destination_service defined.")
 
     return secret_dict
 
@@ -694,7 +713,9 @@ def _verify_user_name(secret):
     if env_iam_smtp_user_name != secret_user_name:
         log.error("User %s is not allowed to use this Lambda function for rotation",
                   secret_user_name)
-        raise ValueError(f"User {secret_user_name} is not allowed to use this Lambda function for rotation")
+        raise ValueError(
+            f"User {secret_user_name} is not allowed to use this Lambda function for rotation"
+            )
 
 
 #TODO-test
