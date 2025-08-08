@@ -385,7 +385,9 @@ def set_secret(service_client, arn, token, ssm_document_name, ssm_rotate_on_ec2_
             log.info("setSecret: Successfully set secret for %s against ec2 instance: %s.", arn,
               ssm_rotate_on_ec2_instance_id)
             _publish_sns(
-            SNS_TOPIC_ARN, f"""setSecret:Successfully set secret for: {arn}."""
+            SNS_TOPIC_ARN,
+            f"""setSecret:Successfully set secret for: {arn}, against ec2 \
+instance: {ssm_rotate_on_ec2_instance_id}."""
             )
             #potentially set AWSCURRENT based AKID to inactive here now that the app is
             #using AWSPENDING AKID
@@ -400,7 +402,7 @@ def set_secret(service_client, arn, token, ssm_document_name, ssm_rotate_on_ec2_
     else:
         _publish_sns(
             SNS_TOPIC_ARN, f"""setSecret:ssm_rotate_on_ec2_instance_id NOT provided, no SSM \
-            actions: {arn}."""
+actions: {arn}."""
             )
         log.info("setSecret:ssm_rotate_on_ec2_instance_id NOT provided, no SSM actions," \
         "continue...")
@@ -483,7 +485,7 @@ def test_secret(service_client, arn, token, ses_smtp_endpoint):
         _publish_sns(
             SNS_TOPIC_ARN,
             f"""testSecret:no sender email provided, not testing new SMTP credentials against SES \
-            for: {arn}."""
+for: {arn}."""
             )
         log.info("testSecret: TEST_STAGE_SENDER_EMAIL NOT provided, no test email sent using SMTP" \
         "credentials, continue...")
