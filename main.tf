@@ -1,6 +1,10 @@
 ##############################
 # Lambda
 ##############################
+locals {
+  lambda_name = "${var.project_name}-rotate-secret-ses-smtp-credentials"
+}
+
 module "lambda" {
   #pinning to v7.14.0 to support aws provider v5.74
   source = "git::https://github.com/terraform-aws-modules/terraform-aws-lambda.git?ref=v7.14.0"
@@ -137,10 +141,6 @@ data "aws_iam_policy_document" "lambda" {
       # }
     }
   }
-}
-
-locals {
-  lambda_name = "${var.project_name}-rotate-secret-ses-smtp-credentials"
 }
 
 resource "aws_lambda_permission" "secretmanager" {

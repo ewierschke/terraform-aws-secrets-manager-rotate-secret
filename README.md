@@ -1,4 +1,4 @@
-# terraform-aws-secrets-manager-rotate-ses-secret
+# terraform-aws-secrets-manager-rotation-by-lambda-ses-smtp-credentials
 
 A Terraform module creating an AWS Lambda function to enable IAM user SES SMTP credential rotation
 initiated by AWS Secrets Manager.

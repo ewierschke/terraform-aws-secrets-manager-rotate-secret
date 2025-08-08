@@ -384,6 +384,9 @@ def set_secret(service_client, arn, token, ssm_document_name, ssm_rotate_on_ec2_
 
             log.info("setSecret: Successfully set secret for %s against ec2 instance: %s.", arn,
               ssm_rotate_on_ec2_instance_id)
+            _publish_sns(
+            SNS_TOPIC_ARN, f"""setSecret:Successfully set secret for: {arn}."""
+            )
             #potentially set AWSCURRENT based AKID to inactive here now that the app is
             #using AWSPENDING AKID
         except ClientError as e:
@@ -395,7 +398,11 @@ def set_secret(service_client, arn, token, ssm_document_name, ssm_rotate_on_ec2_
             log.error("setSecret:Failed to execute SSM operations due to runtime error: %s", e)
             raise
     else:
-        log.info("setSecret: ssm_rotate_on_ec2_instance_id NOT provided, no SSM actions," \
+        _publish_sns(
+            SNS_TOPIC_ARN, f"""setSecret:ssm_rotate_on_ec2_instance_id NOT provided, no SSM \
+            actions: {arn}."""
+            )
+        log.info("setSecret:ssm_rotate_on_ec2_instance_id NOT provided, no SSM actions," \
         "continue...")
 
     log.info("setSecret: Completed")
@@ -472,10 +479,11 @@ def test_secret(service_client, arn, token, ses_smtp_endpoint):
             SNS_TOPIC_ARN, f"testSecret:sent email w new credentials via SES for secret arn: {arn}."
             )
     else:
-        log.info("testSecret:Publishing message to topic arn: %s.", SNS_TOPIC_ARN)
+        log.debug("testSecret:Publishing message to topic arn: %s.", SNS_TOPIC_ARN)
         _publish_sns(
-            SNS_TOPIC_ARN, f"""testSecret:no sender email provided, not testing new SMTP
-             credentials against SES for: {arn}."""
+            SNS_TOPIC_ARN,
+            f"""testSecret:no sender email provided, not testing new SMTP credentials against SES \
+            for: {arn}."""
             )
         log.info("testSecret: TEST_STAGE_SENDER_EMAIL NOT provided, no test email sent using SMTP" \
         "credentials, continue...")
@@ -518,7 +526,7 @@ def finish_secret(service_client, arn, token):
     log.info("finishSecret: Successfully set AWSCURRENT stage to version %s for secret %s.", token,
              arn)
     #send notification to SNS topic
-    log.info("finishSecret:Publishing message to topic arn %s.", SNS_TOPIC_ARN)
+    log.debug("finishSecret:Publishing message to topic arn %s.", SNS_TOPIC_ARN)
     _publish_sns(SNS_TOPIC_ARN, f"finishSecret:Successfully rotated secret_arn: {arn}.")
 
 
@@ -823,6 +831,6 @@ def _publish_sns(topic_arn, message):
     sns_client = boto3_client('sns')
     try:
         response = sns_client.publish(TopicArn=topic_arn, Message=message)
-        log.info("SNS message published: %s", response)
+        log.debug("SNS message published: %s", response)
     except ClientError as e:
         log.error("SNS publish failed: %s", e)
