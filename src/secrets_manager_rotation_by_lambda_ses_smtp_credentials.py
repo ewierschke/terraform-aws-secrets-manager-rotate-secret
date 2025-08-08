@@ -835,7 +835,7 @@ def _publish_sns(topic_arn, message):
         message (str): The message to publish.
     """
     sns_client = boto3_client('sns')
-    message += os.environ['AWS_LAMBDA_FUNCTION_NAME'] + '-' + message
+    message = 'function: ' + os.environ['AWS_LAMBDA_FUNCTION_NAME'] + ' - ' + message
     try:
         response = sns_client.publish(TopicArn=topic_arn, Message=message)
         log.debug("SNS message published: %s", response)
