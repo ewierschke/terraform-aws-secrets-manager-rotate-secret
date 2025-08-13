@@ -207,8 +207,6 @@ resource "aws_vpc_security_group_egress_rule" "allow_all_outbound" {
   count = length(local.list_of_subnets_to_attach_lambda) > 0 ? 1 : 0
 
   security_group_id = aws_security_group.lambda[0].id
-  from_port         = 0
-  to_port           = 0
   ip_protocol       = "-1"
   cidr_ipv4         = "0.0.0.0/0"
   description       = "Allow all outbound traffic"
