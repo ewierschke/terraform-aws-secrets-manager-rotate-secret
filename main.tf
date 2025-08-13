@@ -37,6 +37,11 @@ module "lambda" {
   tracing_mode                      = var.lambda.tracing_mode
   use_existing_cloudwatch_log_group = var.lambda.use_existing_cloudwatch_log_group
 
+  #test conditionally set if attach_to_vpc_id is not empty
+  vpc_subnet_ids         = var.attach_to_vpc_id != "" ? data.aws_subnets.private_subnets[0].ids : null
+  vpc_security_group_ids = var.attach_to_vpc_id != "" ? [aws_security_group.lambda[0].id] : null
+  attach_network_policy  = var.attach_to_vpc_id != "" ? true : false
+
   source_path = [
     {
       path             = "${path.module}/src"
@@ -161,6 +166,48 @@ resource "aws_sns_topic_subscription" "email_subscription" {
   topic_arn = aws_sns_topic.rotation_notifications.arn
   protocol  = "email"
   endpoint  = var.notification_recipient_email
+}
+
+data "aws_vpc" "attach_to_vpc" {
+  count = var.attach_to_vpc_id != "" ? 1 : 0
+
+  filter {
+    name   = "vpc-id"
+    values = [var.attach_to_vpc_id]
+  }
+}
+
+data "aws_subnets" "private_subnets" {
+  count = var.attach_to_vpc_id != "" ? 1 : 0
+
+  filter {
+    name   = "vpc-id"
+    values = [data.aws_vpc.attach_to_vpc[0].id]
+  }
+  filter {
+    name   = "tag:Name"
+    values = ["*private*"] # Filters for subnets where the Name tag contains "private"
+  }
+}
+
+resource "aws_security_group" "lambda" {
+  count = var.attach_to_vpc_id != "" ? 1 : 0
+
+  name        = "${local.lambda_name}-sg"
+  description = "${local.lambda_name}-security-group"
+  vpc_id      = data.aws_vpc.attach_to_vpc[0].id
+}
+
+#this lambda will only be triggered by Secrets Manager, so we only allow all outbound traffic
+resource "aws_vpc_security_group_egress_rule" "allow_all_outbound" {
+  count = var.attach_to_vpc_id != "" ? 1 : 0
+
+  security_group_id = aws_security_group.lambda[0].id
+  from_port         = 0
+  to_port           = 0
+  ip_protocol       = "-1"
+  cidr_ipv4         = "0.0.0.0/0"
+  description       = "Allow all outbound traffic"
 }
 
 ##############################

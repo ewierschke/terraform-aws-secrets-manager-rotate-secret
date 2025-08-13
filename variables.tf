@@ -11,7 +11,7 @@ variable "dry_run" {
 
 #cloudwatch_logs_retention_in_days - security hub medium finding; default to address finding is 365 days
 #tracing_mode - security hub low finding when Active tracing is not enabled, default is PassThrough
-#use_existing_cloudwatch_log_group and logging_log_group - may be required for govcloud 
+#use_existing_cloudwatch_log_group and logging_log_group - may be required for govcloud
 variable "lambda" {
   description = "Object of optional attributes passed on to the lambda module"
   type = object({
@@ -96,4 +96,10 @@ variable "sns_kms_master_key_id" {
 variable "secret_arn_for_lambda_policy" {
   description = "ARN of the secret to be configured for rotation, this is used to allow the lambda function to access only this secret"
   type        = string
+}
+
+variable "attach_to_vpc_id" {
+  description = "VPC ID to attach lambda function to, if empty string provided, function won't be attached to any VPC"
+  type        = string
+  default     = ""
 }
