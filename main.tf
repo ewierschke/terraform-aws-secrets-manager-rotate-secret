@@ -44,7 +44,7 @@ module "lambda" {
   #test conditionally set if attach_to_vpc_id is not empty
   vpc_subnet_ids         = var.attach_to_vpc_id != "" ? local.list_of_subnets_to_attach_lambda : null
   vpc_security_group_ids = var.attach_to_vpc_id != "" ? [aws_security_group.lambda[0].id] : null
-  attach_network_policy  = var.attach_to_vpc_id != "" ? true : false
+  attach_network_policy  = length(local.list_of_subnets_to_attach_lambda) > 0 ? true : false
 
   source_path = [
     {
@@ -195,7 +195,7 @@ data "aws_subnets" "private_subnets" {
 }
 
 resource "aws_security_group" "lambda" {
-  count = var.attach_to_vpc_id != "" ? 1 : 0
+  count = length(local.list_of_subnets_to_attach_lambda) > 0 ? 1 : 0
 
   name        = "${local.lambda_name}-sg"
   description = "${local.lambda_name}-security-group"
@@ -204,7 +204,7 @@ resource "aws_security_group" "lambda" {
 
 #this lambda will only be triggered by Secrets Manager, so we only allow all outbound traffic
 resource "aws_vpc_security_group_egress_rule" "allow_all_outbound" {
-  count = var.attach_to_vpc_id != "" ? 1 : 0
+  count = length(local.list_of_subnets_to_attach_lambda) > 0 ? 1 : 0
 
   security_group_id = aws_security_group.lambda[0].id
   from_port         = 0
