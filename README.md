@@ -15,6 +15,9 @@ attach_to_vpc_id.  A data source will try to find a list of subnet ids with the 
 attach the function to those subnet ids.  If no subnets are found, or a specific set of subnet ids
 are designed, a list of subnet ids can either be provided, or the function will not attach to the
 provided vpc id.
+Ensure the subnets selected within the vpc can reach the internet or has appropriate vpc endpoints
+and configuration for private service access to Secrets Manager, SNS, IAM,
+SSM/ssmmessages/ec2messages, and the SES/email-smtp endpoint.
 
 ## Secret Structure
 
