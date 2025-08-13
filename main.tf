@@ -41,9 +41,9 @@ module "lambda" {
   tracing_mode                      = var.lambda.tracing_mode
   use_existing_cloudwatch_log_group = var.lambda.use_existing_cloudwatch_log_group
 
-  #test conditionally set if attach_to_vpc_id is not empty
-  vpc_subnet_ids         = var.attach_to_vpc_id != "" ? local.list_of_subnets_to_attach_lambda : null
-  vpc_security_group_ids = var.attach_to_vpc_id != "" ? [aws_security_group.lambda[0].id] : null
+  #conditionally set if local.list_of_subnets_to_attach_lambda evaluates larger than 0; subnet ids found w name *private* or explicitly list is provided
+  vpc_subnet_ids         = length(local.list_of_subnets_to_attach_lambda) > 0 ? local.list_of_subnets_to_attach_lambda : null
+  vpc_security_group_ids = length(local.list_of_subnets_to_attach_lambda) > 0 ? [aws_security_group.lambda[0].id] : null
   attach_network_policy  = length(local.list_of_subnets_to_attach_lambda) > 0 ? true : false
 
   source_path = [
