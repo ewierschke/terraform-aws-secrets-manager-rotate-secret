@@ -10,6 +10,12 @@ rotation function for a given Secrets Manager secret configured for automatic ro
 configuration is set to Enabled for automatic rotation in Secrets Manager 
 (or when the resource aws_secretsmanager_secret_rotation is applied to the secret)
 
+If the function should be attached to a given vpc, provide a vpc id for the variable
+attach_to_vpc_id.  A data source will try to find a list of subnet ids with the word *private* and
+attach the function to those subnet ids.  If no subnets are found, or a specific set of subnet ids
+are designed, a list of subnet ids can either be provided, or the function will not attach to the
+provided vpc id.
+
 ## Secret Structure
 
 The AWS Secrets Manager secret is expected to contain the following JSON text strings with key-value
@@ -88,8 +94,10 @@ Lambda execution role required access to function.
 | Name | Type |
 |------|------|
 | [aws_lambda_permission.secretmanager](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/lambda_permission) | resource |
+| [aws_security_group.lambda](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/security_group) | resource |
 | [aws_sns_topic.rotation_notifications](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/sns_topic) | resource |
 | [aws_sns_topic_subscription.email_subscription](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/sns_topic_subscription) | resource |
+| [aws_vpc_security_group_egress_rule.allow_all_outbound](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/vpc_security_group_egress_rule) | resource |
 
 ## Inputs
 
@@ -99,6 +107,8 @@ Lambda execution role required access to function.
 | <a name="input_secret_arn_for_lambda_policy"></a> [secret\_arn\_for\_lambda\_policy](#input\_secret\_arn\_for\_lambda\_policy) | ARN of the secret to be configured for rotation, this is used to allow the lambda function to access only this secret | `string` | n/a | yes |
 | <a name="input_ses_smtp_endpoint"></a> [ses\_smtp\_endpoint](#input\_ses\_smtp\_endpoint) | SES SMTP Endpoint to test new smtp credentials against | `string` | n/a | yes |
 | <a name="input_smtp_iam_username"></a> [smtp\_iam\_username](#input\_smtp\_iam\_username) | IAM Username for which to generate new SES SMTP credentials | `string` | n/a | yes |
+| <a name="input_attach_to_vpc_explicit_list_of_subnet_ids"></a> [attach\_to\_vpc\_explicit\_list\_of\_subnet\_ids](#input\_attach\_to\_vpc\_explicit\_list\_of\_subnet\_ids) | List of subnet IDs to attach lambda function to, if empty list provided, function will try to discover subnets with name containing private within the provided VPC id | `list(string)` | `[]` | no |
+| <a name="input_attach_to_vpc_id"></a> [attach\_to\_vpc\_id](#input\_attach\_to\_vpc\_id) | VPC ID to attach lambda function to, if empty string provided, function won't be attached to any VPC | `string` | `""` | no |
 | <a name="input_dry_run"></a> [dry\_run](#input\_dry\_run) | Boolean toggle to control the dry-run mode of the lambda function | `bool` | `true` | no |
 | <a name="input_lambda"></a> [lambda](#input\_lambda) | Object of optional attributes passed on to the lambda module | <pre>object({<br/>    artifacts_dir                     = optional(string, "builds")<br/>    build_in_docker                   = optional(bool, false)<br/>    cloudwatch_logs_retention_in_days = optional(number, 365)<br/>    create_package                    = optional(bool, true)<br/>    ephemeral_storage_size            = optional(number)<br/>    ignore_source_code_hash           = optional(bool, true)<br/>    local_existing_package            = optional(string)<br/>    logging_log_group                 = optional(string, null)<br/>    memory_size                       = optional(number, 128)<br/>    recreate_missing_package          = optional(bool, false)<br/>    runtime                           = optional(string, "python3.12")<br/>    s3_bucket                         = optional(string)<br/>    s3_existing_package               = optional(map(string))<br/>    s3_prefix                         = optional(string)<br/>    store_on_s3                       = optional(bool, false)<br/>    timeout                           = optional(number, 300)<br/>    tracing_mode                      = optional(string, "PassThrough")<br/>    use_existing_cloudwatch_log_group = optional(bool, false)<br/>  })</pre> | `{}` | no |
 | <a name="input_log_level"></a> [log\_level](#input\_log\_level) | Log level for lambda | `string` | `"INFO"` | no |

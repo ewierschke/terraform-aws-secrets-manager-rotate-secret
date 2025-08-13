@@ -2,7 +2,8 @@
 # Lambda
 ##############################
 locals {
-  lambda_name = "${var.project_name}-rotate-secret-ses-smtp-credentials"
+  lambda_name                      = "${var.project_name}-rotate-secret-ses-smtp-credentials"
+  list_of_subnets_to_attach_lambda = length(var.attach_to_vpc_explicit_list_of_subnet_ids) > 0 ? var.attach_to_vpc_explicit_list_of_subnet_ids : data.aws_subnets.private_subnets[0].ids
 }
 
 module "lambda" {
@@ -38,7 +39,7 @@ module "lambda" {
   use_existing_cloudwatch_log_group = var.lambda.use_existing_cloudwatch_log_group
 
   #test conditionally set if attach_to_vpc_id is not empty
-  vpc_subnet_ids         = var.attach_to_vpc_id != "" ? data.aws_subnets.private_subnets[0].ids : null
+  vpc_subnet_ids         = var.attach_to_vpc_id != "" ? local.list_of_subnets_to_attach_lambda : null
   vpc_security_group_ids = var.attach_to_vpc_id != "" ? [aws_security_group.lambda[0].id] : null
   attach_network_policy  = var.attach_to_vpc_id != "" ? true : false
 

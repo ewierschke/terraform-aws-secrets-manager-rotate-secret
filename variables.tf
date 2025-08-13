@@ -103,3 +103,9 @@ variable "attach_to_vpc_id" {
   type        = string
   default     = ""
 }
+
+variable "attach_to_vpc_explicit_list_of_subnet_ids" {
+  description = "List of subnet IDs to attach lambda function to, if empty list provided, function will try to discover subnets with name containing private within the provided VPC id"
+  type        = list(string)
+  default     = []
+}
