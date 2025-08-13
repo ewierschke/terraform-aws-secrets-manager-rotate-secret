@@ -1,11 +1,14 @@
+locals {
+  lambda_name = "${var.project_name}-rotate-secret-ses-smtp-credentials"
+  list_of_subnets_to_attach_lambda = (
+    length(var.attach_to_vpc_explicit_list_of_subnet_ids) > 0 ? var.attach_to_vpc_explicit_list_of_subnet_ids :
+    (var.attach_to_vpc_id != "" ? data.aws_subnets.private_subnets[0].ids : [])
+  )
+}
+
 ##############################
 # Lambda
 ##############################
-locals {
-  lambda_name                      = "${var.project_name}-rotate-secret-ses-smtp-credentials"
-  list_of_subnets_to_attach_lambda = length(var.attach_to_vpc_explicit_list_of_subnet_ids) > 0 ? var.attach_to_vpc_explicit_list_of_subnet_ids : data.aws_subnets.private_subnets[0].ids
-}
-
 module "lambda" {
   #pinning to v7.14.0 to support aws provider v5.74
   source = "git::https://github.com/terraform-aws-modules/terraform-aws-lambda.git?ref=v7.14.0"
