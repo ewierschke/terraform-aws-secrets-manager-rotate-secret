@@ -3,11 +3,11 @@
 A Terraform module creating an AWS Lambda function to enable IAM user SES SMTP credential rotation
 initiated by AWS Secrets Manager.
 
-This Lambda function (supporting resources are created by this module) would be configured as the 
+This Lambda function (supporting resources are created by this module) would be configured as the
 rotation function for a given Secrets Manager secret configured for automatic rotation.
 
 *Note - Initial/immediate rotation is performed as soon as the chosen Secret's Rotation
-configuration is set to Enabled for automatic rotation in Secrets Manager 
+configuration is set to Enabled for automatic rotation in Secrets Manager
 (or when the resource aws_secretsmanager_secret_rotation is applied to the secret)
 
 If the function should be attached to a given vpc, provide a vpc id for the variable
@@ -23,12 +23,13 @@ SSM/ssmmessages/ec2messages, and the SES/email-smtp endpoint.
 
 The AWS Secrets Manager secret is expected to contain the following JSON text strings with key-value
 pairs structure to ensure proper validation prior to rotation:
-```
+
+```json
 {
     "iam_user_arn": "<must be pre-populated with iam user arn>", 
     "AccessKeyId": "<to be populated by function>", 
     "SMTPPassword": "<to be popualted by function>", 
-    "username": "<must be pre-populated with iam username matching module variable smtp_iam_username to be rotated>"
+    "username": "<must be pre-populated with iam username matching module variable smtp_iam_username to be rotated>",
     "destination_service": "<friendly name of service using this secret; used for set_service current v pending validation>
 }
 ```
@@ -49,23 +50,24 @@ parameter so that instance adjustments can be made locally on the EC2 and rollba
 rotations possible given each scripts logic.  Secret values should remain masked and attempts
 should be made to limit exposure in AWS logs.
 
-### Summary of the four steps in the function:
+### Summary of the four steps in the function
+
 - createSecret - will create a new iam access key pair (deleting old after minor collission
 avoidance and validation) and calculate the SES SMTP password before storing in the secrets'
-AWSPENDING label/stage. 
-- setSecret - attempts to trigger the rotate_smtp.sh script which needs to query the provided secret 
+AWSPENDING label/stage.
+- setSecret - attempts to trigger the rotate_smtp.sh script which needs to query the provided secret
 arn for the AWSPENDING label/stage on the target ec2 instance id via SSM run_command and check for
 successful execution.
-- testSecret - Once a sucessful setSecret completes, if set, will attempt to use the new IAM 
+- testSecret - Once a sucessful setSecret completes, if set, will attempt to use the new IAM
 credentials to send a test email
-- finishSecret - If all prior steps succeed, moves the AWSCURRENT label/stage onto the AWSPENDING 
+- finishSecret - If all prior steps succeed, moves the AWSCURRENT label/stage onto the AWSPENDING
 label/stage in order for future builds/rotations to retrieve the proper value.
 
 It is assumed that the `rotate_smtp.sh` script will contain logic to ensure the running application
 continues to consume functional SMTP credentials and in the event of a failed local execution can
 revert to previously functional credentials (ie AWSCURRENT values).
 
-*An example script `rotate_smtp-example.sh` is contained in this repo to show a very simplistic 
+*An example script `rotate_smtp-example.sh` is contained in this repo to show a very simplistic
 approach.  The function assumes the script will exist within /usr/local/bin/rotate_smtp.sh on target
 ec2 instance.  Again, this is to avoid passing sensitive values through SSM send_command and
 requires ec2 instance to query for AWSPENDING label/stage of secret and script must succeed or
