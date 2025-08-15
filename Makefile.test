@@ -1,0 +1,93 @@
+# Test Makefile for SES SMTP Rotation Lambda
+.PHONY: help install-test-deps test test-unit test-integration test-terraform lint format security-scan clean
+
+# Default target
+help: ## Show this help message
+	@echo 'Usage: make [target]'
+	@echo ''
+	@echo 'Targets:'
+	@awk 'BEGIN {FS = ":.*?## "} /^[a-zA-Z_-]+:.*?## / {printf "  %-20s %s\n", $$1, $$2}' $(MAKEFILE_LIST)
+
+# Install test dependencies
+install-test-deps: ## Install testing dependencies
+	pip install -r tests/requirements.txt
+	pip install -r src/requirements.txt
+
+# Run all tests
+test: test-unit test-terraform ## Run all tests
+
+# Run unit tests only
+test-unit: ## Run Python unit tests
+	pytest tests/unit/ -v --cov=src --cov-report=html --cov-report=term-missing
+
+# Run integration tests
+test-integration: ## Run integration tests
+	pytest tests/integration/ -v -m integration
+
+# Run Terraform tests
+test-terraform: ## Run Terraform validation and tests
+	terraform fmt -check -diff
+	terraform init -backend=false
+	terraform validate
+	pytest tests/unit/test_terraform.py -v -m terraform
+
+# Run Terraform plan test (slow)
+test-terraform-plan: ## Run Terraform plan test
+	pytest tests/unit/test_terraform.py::TestTerraformPlan::test_terraform_plan_generation -v -s
+
+# Lint Python code
+lint: ## Lint Python code
+	flake8 src/ tests/ --max-line-length=100 --ignore=E203,W503
+	mypy src/ --ignore-missing-imports
+	black --check src/ tests/
+	isort --check-only src/ tests/
+
+# Format Python code
+format: ## Format Python code
+	black src/ tests/
+	isort src/ tests/
+
+# Security scanning
+security-scan: ## Run security scans
+	bandit -r src/ -f json -o bandit-report.json || true
+	safety check --json --output safety-report.json || true
+	@echo "Security scan reports generated: bandit-report.json, safety-report.json"
+
+# Clean up test artifacts
+clean: ## Clean up test artifacts
+	rm -rf .pytest_cache/
+	rm -rf htmlcov/
+	rm -rf .coverage
+	rm -rf *.tfplan
+	rm -rf .terraform/
+	rm -rf .terraform.lock.hcl
+	rm -rf bandit-report.json
+	rm -rf safety-report.json
+	find . -type d -name __pycache__ -exec rm -rf {} +
+	find . -type f -name "*.pyc" -delete
+
+# Run tests with coverage and generate reports
+test-coverage: ## Run tests with detailed coverage reporting
+	pytest tests/unit/ --cov=src --cov-report=html --cov-report=xml --cov-report=term-missing --cov-fail-under=80
+
+# Run fast tests only (exclude slow/integration tests)
+test-fast: ## Run fast tests only
+	pytest tests/unit/ -v -m "not slow and not integration"
+
+# Run all quality checks
+quality: lint security-scan test-fast ## Run all quality checks
+
+# CI pipeline target
+ci: install-test-deps quality test-terraform ## Run full CI pipeline
+
+# Development setup
+dev-setup: install-test-deps ## Set up development environment
+	pre-commit install || echo "pre-commit not available, skipping hook installation"
+
+# Run tests in parallel
+test-parallel: ## Run tests in parallel
+	pytest tests/unit/ -n auto -v
+
+# Generate test report
+test-report: ## Generate comprehensive test report
+	pytest tests/ --html=test-report.html --self-contained-html --cov=src --cov-report=html
